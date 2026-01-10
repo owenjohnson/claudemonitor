@@ -16,3 +16,11 @@ DerivedData/
 .DS_Store
 *.swp
 *~
+
+# MCP Context Engineering artifacts
+.agent-artifacts/
+.agent-memory/
+.gemini-config.json
+.cost-tracking.json
+.env
+.env.local
