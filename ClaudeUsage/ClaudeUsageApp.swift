@@ -1,9 +1,10 @@
 import SwiftUI
+import Combine
 
 @main
 struct ClaudeUsageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    
+
     var body: some Scene {
         Settings {
             EmptyView()
@@ -17,8 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var popover: NSPopover?
     var usageManager = UsageManager()
     var timer: Timer?
-
-    private let hasLaunchedKey = "hasLaunchedBefore"
+    var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon - menubar only
@@ -26,48 +26,67 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupStatusItem()
         setupPopover()
-
-        // Show first launch explanation if needed
-        if !UserDefaults.standard.bool(forKey: hasLaunchedKey) {
-            showKeychainExplanation {
-                UserDefaults.standard.set(true, forKey: self.hasLaunchedKey)
-                self.startFetching()
-            }
-        } else {
-            startFetching()
-        }
+        setupWakeNotification()
+        setupUsageObserver()
+        startFetching()
     }
 
-    func showKeychainExplanation(completion: @escaping () -> Void) {
-        let alert = NSAlert()
-        alert.messageText = "Keychain Access Required"
-        alert.informativeText = "Claude Usage needs to access the macOS Keychain to read your Claude Code credentials.\n\nThis allows the app to check your usage limits without requiring you to log in again.\n\nYour credentials are stored securely by Claude Code and are never sent anywhere except to Anthropic's API."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Continue")
-        alert.runModal()
-        completion()
+    func setupWakeNotification() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    func setupUsageObserver() {
+        // Auto-update status item when usage or error changes
+        usageManager.$usage
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
+
+        usageManager.$error
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
+    }
+
+    @objc func handleWake() {
+        // Delay refresh after wake to allow keychain to unlock
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+            await usageManager.refresh()
+        }
     }
 
     func startFetching() {
         // Initial fetch and update check
         Task {
+            // If system recently booted (within 60 seconds), wait before accessing keychain
+            // The keychain/login system takes time to be fully available after boot
+            let uptime = ProcessInfo.processInfo.systemUptime
+            if uptime < 60 {
+                let delaySeconds = max(30 - uptime, 5) // Wait until ~30s after boot, minimum 5s
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            }
+
             await usageManager.refresh()
             await usageManager.checkForUpdates()
-            updateStatusItem()
         }
 
         // Refresh every 2 minutes
         timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.usageManager.refresh()
-                self?.updateStatusItem()
             }
         }
     }
     
     func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusItem?.button {
             button.title = "⏳"
             button.action = #selector(togglePopover)
@@ -84,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func updateStatusItem() {
         guard let button = statusItem?.button else { return }
-        
+
         if let usage = usageManager.usage {
             let sessionPct = usage.sessionPercentage
             let emoji = usageManager.statusEmoji
