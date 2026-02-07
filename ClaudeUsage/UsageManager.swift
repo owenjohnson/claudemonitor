@@ -21,6 +21,7 @@ class UsageManager: ObservableObject {
     @Published var isLoading = false
     @Published var lastUpdated: Date?
     @Published var updateAvailable: String?
+    @Published var displayName: String?
 
     static let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     static let githubRepo = "richhickson/claudecodeusage"
@@ -56,6 +57,7 @@ class UsageManager: ObservableObject {
             let data = try await fetchUsage(token: token)
             usage = data
             lastUpdated = Date()
+            displayName = try? await fetchDisplayName(token: token)
         } catch let keychainError as KeychainError {
             // Retry on keychain errors that may resolve after unlock
             if retriesRemaining > 0 && keychainError.isRetryable {
@@ -214,6 +216,25 @@ class UsageManager: ObservableObject {
             sonnetUtilization: sonnetOnly?["utilization"] as? Double,
             sonnetResetsAt: parseDate(sonnetOnly?["resets_at"] as? String)
         )
+    }
+
+    private func fetchDisplayName(token: String) async throws -> String? {
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+
+        let (data, response) = try await urlSession.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let account = json["account"] as? [String: Any] else {
+            return nil
+        }
+
+        return account["display_name"] as? String ?? account["full_name"] as? String
     }
 
     private func parseDate(_ string: String?) -> Date? {

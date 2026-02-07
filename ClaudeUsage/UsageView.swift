@@ -230,15 +230,10 @@ struct UsageView: View {
 
             Divider()
 
-            Button(action: {
-                openURL(URL(string: "https://x.com/richhickson")!)
-            }) {
-                Text("Created by @richhickson")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .padding(.bottom, 8)
+            Text(manager.displayName ?? "Claude Usage")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
         }
         .background(Color(NSColor.controlBackgroundColor))
     }
