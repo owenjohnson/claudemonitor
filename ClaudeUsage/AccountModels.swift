@@ -24,6 +24,15 @@ struct AccountUsage: Identifiable {
     var lastUpdated: Date?
     /// True if this account holds the live keychain token.
     var isCurrentAccount: Bool
+    /// True if a cached token exists in memory for this account (not persisted).
+    var hasCachedToken: Bool = false
 
     var id: String { account.email }
+
+    /// Account has a cached token and was updated recently (within 2 minutes).
+    var isActivelyRefreshing: Bool {
+        guard hasCachedToken, !isCurrentAccount else { return false }
+        guard let updated = lastUpdated else { return hasCachedToken }
+        return Date().timeIntervalSince(updated) < 120
+    }
 }

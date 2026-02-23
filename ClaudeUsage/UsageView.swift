@@ -388,6 +388,23 @@ struct LiveIndicator: View {
     }
 }
 
+// MARK: - CachedBadge (Active: cached token, still refreshing)
+
+struct CachedBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(Color.blue)
+                .frame(width: 8, height: 8)
+            Text("Active")
+                .font(.caption)
+                .foregroundColor(.blue)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Active account with cached token")
+    }
+}
+
 // MARK: - StaleBadge (C3)
 
 struct StaleBadge: View {
@@ -411,6 +428,7 @@ struct AccountHeader: View {
     let email: String
     let organizationName: String?
     let isLive: Bool
+    let isActivelyRefreshing: Bool
     let highestUtilization: Int
     let utilizationColor: Color
     let lastUpdated: Date?
@@ -419,6 +437,7 @@ struct AccountHeader: View {
         email: String,
         organizationName: String?,
         isLive: Bool,
+        isActivelyRefreshing: Bool = false,
         highestUtilization: Int,
         utilizationColor: Color,
         lastUpdated: Date? = nil
@@ -426,6 +445,7 @@ struct AccountHeader: View {
         self.email = email
         self.organizationName = organizationName
         self.isLive = isLive
+        self.isActivelyRefreshing = isActivelyRefreshing
         self.highestUtilization = highestUtilization
         self.utilizationColor = utilizationColor
         self.lastUpdated = lastUpdated
@@ -452,6 +472,8 @@ struct AccountHeader: View {
             HStack(spacing: 6) {
                 if isLive {
                     LiveIndicator()
+                } else if isActivelyRefreshing {
+                    CachedBadge()
                 } else {
                     StaleBadge()
                 }
@@ -474,7 +496,7 @@ struct AccountHeader: View {
     }
 
     private var accessibilityLabelText: String {
-        let statusPart = isLive ? "Live" : "Stale"
+        let statusPart = isLive ? "Live" : (isActivelyRefreshing ? "Active" : "Stale")
         if !isLive, let updated = lastUpdated {
             let relative = updated.formatted(.relative(presentation: .named))
             return "\(email), \(statusPart), \(highestUtilization)% utilization, last updated \(relative)"
@@ -484,6 +506,7 @@ struct AccountHeader: View {
 
     private var staleTooltip: String {
         guard !isLive else { return "" }
+        if isActivelyRefreshing { return "Refreshing with cached token" }
         if let updated = lastUpdated {
             let absolute = updated.formatted(date: .abbreviated, time: .shortened)
             return "Data from \(absolute). This account is not currently active."
@@ -502,8 +525,8 @@ struct AccountDisclosureGroup: View {
     init(accountUsage: AccountUsage, onRemove: (() -> Void)? = nil) {
         self.accountUsage = accountUsage
         self.onRemove = onRemove
-        // Default: live account expanded, stale collapsed
-        _isExpanded = State(initialValue: accountUsage.isCurrentAccount)
+        // Default: live and actively-refreshing accounts expanded, stale collapsed
+        _isExpanded = State(initialValue: accountUsage.isCurrentAccount || accountUsage.isActivelyRefreshing)
     }
 
     private var account: AccountRecord { accountUsage.account }
@@ -514,8 +537,8 @@ struct AccountDisclosureGroup: View {
     }
 
     private var utilizationColor: Color {
-        // Stale accounts always render in secondary (muted) color
-        guard accountUsage.isCurrentAccount else {
+        // Stale accounts (no cached token) render in secondary (muted) color
+        guard accountUsage.isCurrentAccount || accountUsage.isActivelyRefreshing else {
             return Color(NSColor.secondaryLabelColor)
         }
         return colorForPercentage(highestUtilization)
@@ -530,6 +553,7 @@ struct AccountDisclosureGroup: View {
                     email: account.email,
                     organizationName: account.organizationName,
                     isLive: accountUsage.isCurrentAccount,
+                    isActivelyRefreshing: accountUsage.isActivelyRefreshing,
                     highestUtilization: highestUtilization,
                     utilizationColor: utilizationColor,
                     lastUpdated: accountUsage.lastUpdated
@@ -549,7 +573,7 @@ struct AccountDisclosureGroup: View {
 
     @ViewBuilder
     private var accountDetail: some View {
-        if accountUsage.isCurrentAccount {
+        if accountUsage.isCurrentAccount || accountUsage.isActivelyRefreshing {
             liveAccountDetail
         } else {
             staleAccountDetail

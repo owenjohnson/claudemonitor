@@ -30,6 +30,11 @@ class UsageManager: ObservableObject {
     /// Used to detect account switches without calling the profile API on every poll.
     private var lastSeenToken: String?
 
+    /// In-memory cache of access tokens by email. Tokens remain valid after being
+    /// overwritten in the keychain; we keep using them until a 401 evicts them.
+    /// Never persisted to disk.
+    private var tokenCache: [String: String] = [:]
+
     /// Guard to prevent overlapping refresh cycles (B2).
     private var isRefreshing = false
 
@@ -74,11 +79,11 @@ class UsageManager: ObservableObject {
         accounts.first(where: { $0.isCurrentAccount })?.account.displayName
     }
 
-    /// Worst-case utilization emoji across live accounts only (stale accounts excluded, per OQ-3).
+    /// Worst-case utilization emoji across live and actively-refreshing accounts (stale excluded).
     var statusEmoji: String {
-        let liveAccounts = accounts.filter { $0.isCurrentAccount }
-        guard !liveAccounts.isEmpty else { return "❓" }
-        let maxUtil = liveAccounts.compactMap { $0.usage }.reduce(0.0) { maxSoFar, u in
+        let activeAccounts = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }
+        guard !activeAccounts.isEmpty else { return "❓" }
+        let maxUtil = activeAccounts.compactMap { $0.usage }.reduce(0.0) { maxSoFar, u in
             max(maxSoFar, u.sessionUtilization, u.weeklyUtilization)
         }
         if maxUtil >= 90 { return "🔴" }
@@ -86,11 +91,11 @@ class UsageManager: ObservableObject {
         return "🟢"
     }
 
-    /// Worst-case utilization percentage across live accounts only (stale excluded, OQ-3).
+    /// Worst-case utilization percentage across live and actively-refreshing accounts (stale excluded).
     var worstCaseUtilization: Int? {
-        let liveAccounts = accounts.filter { $0.isCurrentAccount }
-        guard !liveAccounts.isEmpty else { return nil }
-        let maxUtil = liveAccounts.compactMap { $0.usage }.reduce(0.0) { maxSoFar, u in
+        let activeAccounts = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }
+        guard !activeAccounts.isEmpty else { return nil }
+        let maxUtil = activeAccounts.compactMap { $0.usage }.reduce(0.0) { maxSoFar, u in
             max(maxSoFar, u.sessionUtilization, u.weeklyUtilization)
         }
         return Int(maxUtil)
@@ -135,42 +140,72 @@ class UsageManager: ObservableObject {
     }
 
     /// Refresh all accounts using TaskGroup for concurrent per-account fetches (B4/B5).
-    /// Live account: fetch usage with the current token.
-    /// Stale accounts: keep last-known data (no token available).
+    /// Live account: fetch usage with the current keychain token.
+    /// Cached accounts: fetch usage with their cached token; evict on 401.
+    /// Stale accounts (no token): keep last-known data.
     private func refreshAllAccounts(liveToken: String) async {
         noAccountError = nil  // Clear no-account error on successful token acquisition (D1)
-        setCurrentAccountLoading(true)
-        clearCurrentAccountError()
+
+        // Snapshot tokenCache before entering TaskGroup for @Sendable safety
+        let cachedTokens = tokenCache
+
+        // Set loading state for all accounts that have a token
+        for index in accounts.indices {
+            let email = accounts[index].account.email
+            if accounts[index].isCurrentAccount || cachedTokens[email] != nil {
+                accounts[index].isLoading = true
+                if accounts[index].isCurrentAccount {
+                    accounts[index].error = nil
+                }
+            }
+        }
 
         let session = urlSession
         let version = Self.currentVersion
 
-        await withTaskGroup(of: (String, UsageData?, String?).self) { group in
+        // 4-tuple: email, usage, error, tokenExpired
+        await withTaskGroup(of: (String, UsageData?, String?, Bool).self) { group in
             for account in accounts {
                 let email = account.account.email
                 let isCurrent = account.isCurrentAccount
+                let token: String? = isCurrent ? liveToken : cachedTokens[email]
 
                 group.addTask {
-                    guard isCurrent else {
-                        // Stale account: no live token, preserve last-known data
-                        return (email, nil, nil)
+                    guard let token = token else {
+                        // Truly stale: no token available, preserve last-known data
+                        return (email, nil, nil, false)
                     }
-                    // Per-account error isolation (B5)
                     do {
                         let usage = try await Self.fetchUsage(
-                            token: liveToken, session: session, version: version
+                            token: token, session: session, version: version
                         )
-                        return (email, usage, nil)
+                        return (email, usage, nil, false)
+                    } catch let error as UsageError {
+                        if case .apiError(let code) = error, code == 401 {
+                            return (email, nil, error.localizedDescription, true)
+                        }
+                        return (email, nil, error.localizedDescription, false)
                     } catch {
-                        return (email, nil, error.localizedDescription)
+                        return (email, nil, error.localizedDescription, false)
                     }
                 }
             }
 
             // Collect results back on @MainActor
-            for await (email, usage, error) in group {
+            for await (email, usage, error, tokenExpired) in group {
                 guard let index = accounts.firstIndex(where: { $0.account.email == email }) else { continue }
-                if accounts[index].isCurrentAccount {
+
+                if tokenExpired && !accounts[index].isCurrentAccount {
+                    // Evict expired cached token; account becomes truly stale
+                    tokenCache.removeValue(forKey: email)
+                    accounts[index].hasCachedToken = false
+                    accounts[index].error = "Token expired — switch to this account to refresh"
+                    accounts[index].isLoading = false
+                    continue
+                }
+
+                let hadToken = accounts[index].isCurrentAccount || cachedTokens[email] != nil
+                if hadToken {
                     accounts[index].usage = usage ?? accounts[index].usage
                     accounts[index].error = error
                     accounts[index].lastUpdated = usage != nil ? Date() : accounts[index].lastUpdated
@@ -178,6 +213,9 @@ class UsageManager: ObservableObject {
                 }
             }
         }
+
+        // Sync hasCachedToken flags after refresh
+        syncCachedTokenFlags()
     }
 
     // MARK: - accounts array helpers
@@ -251,6 +289,14 @@ class UsageManager: ObservableObject {
         }
 
         accounts = updated
+        syncCachedTokenFlags()
+    }
+
+    /// Sync hasCachedToken on each AccountUsage from the in-memory tokenCache.
+    private func syncCachedTokenFlags() {
+        for index in accounts.indices {
+            accounts[index].hasCachedToken = tokenCache[accounts[index].account.email] != nil
+        }
     }
 
     // MARK: - Token detection
@@ -385,6 +431,7 @@ class UsageManager: ObservableObject {
     func removeAccount(email: String) {
         // Guard: do not remove the live account
         guard accounts.first(where: { $0.account.email == email })?.isCurrentAccount != true else { return }
+        tokenCache.removeValue(forKey: email)
         var records = loadAccounts()
         records.removeAll { $0.email == email }
         saveAccounts(records)
@@ -479,9 +526,13 @@ class UsageManager: ObservableObject {
 
     /// Create or update an AccountRecord in UserDefaults when a token change is detected.
     /// Also rebuilds the in-memory `accounts` array with the new current account marked live.
+    /// Caches the token in memory so we can keep refreshing this account after a switch.
     @discardableResult
     private func updateAccountRecord(for token: String) async -> String? {
         guard let profile = try? await fetchProfileData(token: token) else { return nil }
+
+        // Cache the token for this account (stays valid even after keychain overwrite)
+        tokenCache[profile.email] = token
 
         var records = loadAccounts()
         let now = Date()

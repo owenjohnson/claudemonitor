@@ -161,10 +161,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let expandedRowHeight: CGFloat = 236 // 56pt row header + ~180pt detail
         let collapsedRowHeight: CGFloat = 56
 
-        // Default: live accounts expanded, stale accounts collapsed
-        let liveCount = accounts.filter { $0.isCurrentAccount }.count
-        let staleCount = accounts.count - liveCount
-        let contentHeight = CGFloat(liveCount) * expandedRowHeight + CGFloat(staleCount) * collapsedRowHeight
+        // Default: live and actively-refreshing accounts expanded, stale accounts collapsed
+        let expandedCount = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }.count
+        let collapsedCount = accounts.count - expandedCount
+        let contentHeight = CGFloat(expandedCount) * expandedRowHeight + CGFloat(collapsedCount) * collapsedRowHeight
 
         let total = headerFooter + contentHeight
         return min(max(total, 200), 480)
