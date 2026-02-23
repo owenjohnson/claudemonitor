@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "stage": "plan",
+  "topic": "multi-account-support",
+  "date": "2026-02-23",
+  "pipeline": "78527857-e611-4023-8764-c43bdda9fd4e",
+  "session": {
+    "teamSize": 5,
+    "modelBreakdown": {
+      "opus": 2,
+      "sonnet": 2,
+      "haiku": 1
+    },
+    "phaseStructure": "Phase 1 (parallel architects) + Phase 2 (write-review cycle)"
+  },
+  "plan": {
+    "taskCount": 35,
+    "phases": 4,
+    "milestones": 4,
+    "estimatedHours": {
+      "optimistic": 26,
+      "realistic": 46,
+      "pessimistic": 78
+    },
+    "criticalPath": [
+      "A3",
+      "A8",
+      "B-pre",
+      "B1",
+      "B6",
+      "C1",
+      "C7",
+      "D3",
+      "D8"
+    ],
+    "criticalPathHours": "40-56"
+  },
+  "review": {
+    "iterations": 1,
+    "finalScore": 82,
+    "scoreThreshold": 80,
+    "recommendation": "auto-accepted (score >= threshold)",
+    "findingCounts": {
+      "critical": 1,
+      "high": 2,
+      "medium": 5,
+      "low": 4
+    }
+  },
+  "decisions": [
+    {
+      "id": "D1",
+      "description": "4-phase implementation approach (A: Token Capture, B: Multi-Account Refresh, C: Multi-Account UI, D: Polish)",
+      "rationale": "Decomposition provides clear dependency ordering and incremental risk reduction"
+    },
+    {
+      "id": "D2",
+      "description": "OQ-3 resolution: exclude stale accounts from worst-case menubar calculation",
+      "rationale": "Resolves ADR ambiguity; prevents edge-case worst-case inflation from dormant accounts"
+    },
+    {
+      "id": "D3",
+      "description": "B-pre task added: fix recursive retry defer bug before Phase B",
+      "rationale": "Risk analyst identified existing bug that would compound during multi-account refresh implementation"
+    },
+    {
+      "id": "D4",
+      "description": "C12 task added: move stale account removal from Phase D to Phase C",
+      "rationale": "Writer synthesis decision based on dependency ordering; prevents late-stage integration issues"
+    }
+  ],
+  "riskContext": {
+    "totalRisks": 18,
+    "fromADR": 6,
+    "newFromAnalysis": 12,
+    "unmetPrerequisites": 4,
+    "blockers": 4,
+    "criticalFinding": "CRIT-1: Design spec Interaction Patterns contradicts OQ-3 resolution on stale account inclusion"
+  },
+  "notes": {
+    "contextContinuation": "Session continued from prior context (context limit). Phase 1 outputs reconstructed from conversation summary. Despite context loss, Plan Writer produced comprehensive plan because source artifacts (ADR, design spec) were on disk.",
+    "readinessAssessment": "Plan ready for Phase A implementation. Three revisions required before Phase C: (1) correct design spec, (2) cover fallback keychain path, (3) add D-pre task for XCTest setup."
+  }
+}

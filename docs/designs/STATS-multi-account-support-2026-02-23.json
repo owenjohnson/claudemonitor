@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "stage": "conceptualize",
+  "topic": "multi-account-support",
+  "date": "2026-02-23",
+  "session": {
+    "teamSize": 5,
+    "modelBreakdown": { "opus": "5", "sonnet": "0", "haiku": "0" }
+  },
+  "decisions": [
+    { "title": "Hybrid storage: UserDefaults + app Keychain", "summary": "Account metadata in UserDefaults, OAuth tokens in app-owned Keychain items keyed by email" },
+    { "title": "Single 60s timer for polling + refresh", "summary": "Simplified from dual-timer design; keychain poll and usage refresh on same cycle" },
+    { "title": "No OAuth refresh tokens", "summary": "Never attempt token refresh to avoid invalidating Claude Code's tokens; mark expired as stale" },
+    { "title": "Summary+drill-down accordion UI", "summary": "Multi-account popover uses compact rows with expand-to-detail; single-account UI unchanged" },
+    { "title": "Email as canonical account key", "summary": "Account identity resolved via /api/oauth/profile endpoint; email is stable unique identifier" },
+    { "title": "Silent account detection", "summary": "New accounts added automatically without user confirmation; appears in popover on next open" },
+    { "title": "Worst-case menubar aggregation", "summary": "Menubar shows highest utilization percentage across all active accounts" }
+  ],
+  "retro": {
+    "detectionChecklist": {
+      "contextLimitHits": false,
+      "agentFailures": false,
+      "scopeDrift": false
+    },
+    "problemCount": 0,
+    "improvementCount": 2
+  },
+  "conceptualize": {
+    "phasesCompleted": 6,
+    "voteOutcome": "Modify",
+    "rejectionRounds": 0,
+    "editRounds": 1,
+    "smeDomains": ["data-design", "info-arch", "ux", "sys-arch"],
+    "compositeScore": 80
+  }
+}

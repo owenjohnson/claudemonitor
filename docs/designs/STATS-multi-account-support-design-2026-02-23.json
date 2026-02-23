@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "stage": "design",
+  "topic": "multi-account-support",
+  "date": "2026-02-23",
+  "session": {
+    "teamSize": 5,
+    "modelBreakdown": { "opus": "0", "sonnet": "4", "haiku": "0" }
+  },
+  "review": {
+    "iterations": 1,
+    "finalScore": 82,
+    "recommendation": "Accept",
+    "findingCounts": { "critical": 2, "high": 3, "medium": 4, "low": 4 }
+  },
+  "decisions": [
+    { "title": "Three-layer staleness signal", "summary": "Badge + muted colors + timestamp for stale account indication" },
+    { "title": "Conditional accordion layout", "summary": "DisclosureGroup accordion for multi-account, pixel-identical for single" },
+    { "title": "Dynamic popover sizing", "summary": "Fixed 280pt width, variable height with explicit NSPopover.contentSize management" },
+    { "title": "Color threshold alignment", "summary": "Resolved to match existing code: green <70%, orange 70-89%, red >=90%" }
+  ],
+  "design": {
+    "reviewIterations": 1,
+    "readinessScore": 82
+  }
+}

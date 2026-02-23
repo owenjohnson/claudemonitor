@@ -32,7 +32,7 @@ struct UsageView: View {
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
-            
+
             // Update available banner
             if let newVersion = manager.updateAvailable {
                 Button(action: {
@@ -52,20 +52,43 @@ struct UsageView: View {
 
             Divider()
 
-            if let error = manager.error {
-                errorView(error)
-            } else if let usage = manager.usage {
-                usageContent(usage)
+            // C5: Conditional layout — single account uses existing layout (pixel-identical to v1.7);
+            // two or more accounts use the multi-account accordion.
+            if manager.accounts.count <= 1 {
+                singleAccountContent()
             } else {
-                loadingView()
+                multiAccountContent()
             }
-            
+
             Divider()
-            
+
             // Footer
             footerView()
         }
         .frame(width: 280)
+    }
+
+    // Single-account content — pixel-identical to v1.7
+    @ViewBuilder
+    func singleAccountContent() -> some View {
+        if let error = manager.error {
+            errorView(error)
+        } else if let usage = manager.usage {
+            usageContent(usage)
+        } else {
+            loadingView()
+        }
+    }
+
+    // Multi-account accordion content
+    @ViewBuilder
+    func multiAccountContent() -> some View {
+        AccountList(
+            accounts: manager.accounts,
+            onRemoveAccount: { email in
+                manager.removeAccount(email: email)
+            }
+        )
     }
     
     @ViewBuilder
@@ -258,13 +281,16 @@ struct UsageView: View {
     }
 }
 
+enum UsageRowStyle { case card, inline }
+
 struct UsageRow: View {
     let title: String
     let subtitle: String
     let percentage: Int
     let resetsAt: Date?
     let color: Color
-    
+    var style: UsageRowStyle = .card
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -276,29 +302,32 @@ struct UsageRow: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Spacer()
-                
+
                 Text("\(percentage)%")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(color)
             }
-            
+
             // Progress bar
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color(NSColor.separatorColor))
                         .frame(height: 8)
-                    
+
                     RoundedRectangle(cornerRadius: 4)
                         .fill(color)
                         .frame(width: geometry.size.width * CGFloat(percentage) / 100, height: 8)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(title) usage")
+                .accessibilityValue("\(percentage) percent")
             }
             .frame(height: 8)
-            
+
             // Reset time
             if let resetsAt = resetsAt {
                 HStack {
@@ -310,9 +339,9 @@ struct UsageRow: View {
                 .foregroundColor(.secondary)
             }
         }
-        .padding(12)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
+        .padding(style == .card ? 12 : 8)
+        .background(style == .card ? Color(NSColor.controlBackgroundColor) : Color.clear)
+        .cornerRadius(style == .card ? 8 : 0)
     }
     
     func formatTimeRemaining(_ date: Date) -> String {
@@ -331,6 +360,332 @@ struct UsageRow: View {
         }
         
         return "in \(hours)h \(minutes)m"
+    }
+}
+
+// MARK: - LiveIndicator
+
+struct LiveIndicator: View {
+    @State private var isPulsing = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(Color.green)
+                .frame(width: 8, height: 8)
+                .scaleEffect(isPulsing ? 1.3 : 1.0)
+                .animation(
+                    .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
+                    value: isPulsing
+                )
+                .onAppear { isPulsing = true }
+            Text("Live")
+                .font(.caption)
+                .foregroundColor(.green)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Live account")
+    }
+}
+
+// MARK: - StaleBadge (C3)
+
+struct StaleBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "clock")
+                .font(.caption2)
+                .foregroundColor(Color(NSColor.secondaryLabelColor))
+            Text("Stale")
+                .font(.caption)
+                .foregroundColor(Color(NSColor.secondaryLabelColor))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Stale account")
+    }
+}
+
+// MARK: - AccountHeader (C2)
+
+struct AccountHeader: View {
+    let email: String
+    let organizationName: String?
+    let isLive: Bool
+    let highestUtilization: Int
+    let utilizationColor: Color
+    let lastUpdated: Date?
+
+    init(
+        email: String,
+        organizationName: String?,
+        isLive: Bool,
+        highestUtilization: Int,
+        utilizationColor: Color,
+        lastUpdated: Date? = nil
+    ) {
+        self.email = email
+        self.organizationName = organizationName
+        self.isLive = isLive
+        self.highestUtilization = highestUtilization
+        self.utilizationColor = utilizationColor
+        self.lastUpdated = lastUpdated
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(email)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let org = organizationName {
+                    Text(org)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: 6) {
+                if isLive {
+                    LiveIndicator()
+                } else {
+                    StaleBadge()
+                }
+
+                Group {
+                    Text("\(highestUtilization)%")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(utilizationColor)
+                }
+                .help(staleTooltip)
+            }
+        }
+        .frame(height: 56)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabelText)
+        .accessibilityHint("Press Space to expand usage details")
+    }
+
+    private var accessibilityLabelText: String {
+        let statusPart = isLive ? "Live" : "Stale"
+        if !isLive, let updated = lastUpdated {
+            let relative = updated.formatted(.relative(presentation: .named))
+            return "\(email), \(statusPart), \(highestUtilization)% utilization, last updated \(relative)"
+        }
+        return "\(email), \(statusPart), \(highestUtilization)% utilization"
+    }
+
+    private var staleTooltip: String {
+        guard !isLive else { return "" }
+        if let updated = lastUpdated {
+            let absolute = updated.formatted(date: .abbreviated, time: .shortened)
+            return "Data from \(absolute). This account is not currently active."
+        }
+        return "This account is not currently active."
+    }
+}
+
+// MARK: - AccountDisclosureGroup (C4)
+
+struct AccountDisclosureGroup: View {
+    let accountUsage: AccountUsage
+    let onRemove: (() -> Void)?
+    @State private var isExpanded: Bool
+
+    init(accountUsage: AccountUsage, onRemove: (() -> Void)? = nil) {
+        self.accountUsage = accountUsage
+        self.onRemove = onRemove
+        // Default: live account expanded, stale collapsed
+        _isExpanded = State(initialValue: accountUsage.isCurrentAccount)
+    }
+
+    private var account: AccountRecord { accountUsage.account }
+
+    private var highestUtilization: Int {
+        guard let usage = accountUsage.usage else { return 0 }
+        return max(usage.sessionPercentage, usage.weeklyPercentage)
+    }
+
+    private var utilizationColor: Color {
+        // Stale accounts always render in secondary (muted) color
+        guard accountUsage.isCurrentAccount else {
+            return Color(NSColor.secondaryLabelColor)
+        }
+        return colorForPercentage(highestUtilization)
+    }
+
+    var body: some View {
+        DisclosureGroup(
+            isExpanded: $isExpanded,
+            content: { accountDetail },
+            label: {
+                AccountHeader(
+                    email: account.email,
+                    organizationName: account.organizationName,
+                    isLive: accountUsage.isCurrentAccount,
+                    highestUtilization: highestUtilization,
+                    utilizationColor: utilizationColor,
+                    lastUpdated: accountUsage.lastUpdated
+                )
+            }
+        )
+        .contextMenu {
+            if !accountUsage.isCurrentAccount, let remove = onRemove {
+                Button(role: .destructive) {
+                    remove()
+                } label: {
+                    Label("Remove account", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var accountDetail: some View {
+        if accountUsage.isCurrentAccount {
+            liveAccountDetail
+        } else {
+            staleAccountDetail
+        }
+    }
+
+    @ViewBuilder
+    private var liveAccountDetail: some View {
+        VStack(spacing: 8) {
+            if accountUsage.isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                    Text("Loading...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 8)
+            } else if let error = accountUsage.error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .padding(.vertical, 8)
+            } else if let usage = accountUsage.usage {
+                UsageRow(
+                    title: "Session",
+                    subtitle: "5-hour window",
+                    percentage: usage.sessionPercentage,
+                    resetsAt: usage.sessionResetsAt,
+                    color: colorForPercentage(usage.sessionPercentage),
+                    style: .inline
+                )
+                UsageRow(
+                    title: "Weekly",
+                    subtitle: "7-day window",
+                    percentage: usage.weeklyPercentage,
+                    resetsAt: usage.weeklyResetsAt,
+                    color: colorForPercentage(usage.weeklyPercentage),
+                    style: .inline
+                )
+                if let sonnetPct = usage.sonnetPercentage {
+                    UsageRow(
+                        title: "Sonnet Only",
+                        subtitle: "Model-specific",
+                        percentage: sonnetPct,
+                        resetsAt: usage.sonnetResetsAt,
+                        color: colorForPercentage(sonnetPct),
+                        style: .inline
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+    }
+
+    @ViewBuilder
+    private var staleAccountDetail: some View {
+        let staleColor = Color(NSColor.secondaryLabelColor)
+        VStack(spacing: 8) {
+            if let usage = accountUsage.usage {
+                UsageRow(
+                    title: "Session",
+                    subtitle: "5-hour window",
+                    percentage: usage.sessionPercentage,
+                    resetsAt: nil,
+                    color: staleColor,
+                    style: .inline
+                )
+                UsageRow(
+                    title: "Weekly",
+                    subtitle: "7-day window",
+                    percentage: usage.weeklyPercentage,
+                    resetsAt: nil,
+                    color: staleColor,
+                    style: .inline
+                )
+                if let sonnetPct = usage.sonnetPercentage {
+                    UsageRow(
+                        title: "Sonnet Only",
+                        subtitle: "Model-specific",
+                        percentage: sonnetPct,
+                        resetsAt: nil,
+                        color: staleColor,
+                        style: .inline
+                    )
+                }
+            } else {
+                Text("No usage data available for this account.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
+            }
+
+            // Layer 3 staleness signal: timestamp
+            if let updated = accountUsage.lastUpdated {
+                HStack {
+                    Text("Updated \(updated.formatted(.relative(presentation: .named)))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.top, 8)
+            }
+        }
+        .padding(.horizontal, 12)
+    }
+
+    private func colorForPercentage(_ pct: Int) -> Color {
+        if pct >= 90 { return .red }
+        if pct >= 70 { return .orange }
+        return .green
+    }
+}
+
+// MARK: - AccountList (C5/C6): multi-account accordion with ScrollView
+
+struct AccountList: View {
+    let accounts: [AccountUsage]
+    let onRemoveAccount: ((String) -> Void)?
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 0) {
+                ForEach(accounts) { accountUsage in
+                    AccountDisclosureGroup(
+                        accountUsage: accountUsage,
+                        onRemove: accountUsage.isCurrentAccount ? nil : {
+                            onRemoveAccount?(accountUsage.account.email)
+                        }
+                    )
+                    Divider()
+                }
+            }
+        }
+        .frame(maxHeight: 380) // C6: 480pt total minus ~100pt header/footer
     }
 }
 

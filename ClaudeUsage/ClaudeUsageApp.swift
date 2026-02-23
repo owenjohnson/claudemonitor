@@ -41,11 +41,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func setupUsageObserver() {
-        // Auto-update status item when accounts array changes (A8).
+        // Auto-update status item and popover size when accounts array changes (A8).
         // $accounts replaces the former $usage and $error sinks.
         usageManager.$accounts
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateStatusItem() }
+            .sink { [weak self] _ in
+                self?.updateStatusItem()
+                self?.updatePopoverSize()
+            }
+            .store(in: &cancellables)
+
+        // Also observe noAccountError so the status bar updates for not-logged-in state (D1).
+        usageManager.$noAccountError
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateStatusItem()
+            }
             .store(in: &cancellables)
     }
 
@@ -83,7 +94,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            button.title = "⏳"
+            button.image = statusImage(symbolName: "clock.arrow.circlepath", color: .secondaryLabelColor)
+            button.imagePosition = .imageLeading
             button.action = #selector(togglePopover)
             button.target = self
         }
@@ -91,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func setupPopover() {
         popover = NSPopover()
-        popover?.contentSize = NSSize(width: 280, height: 320)
+        popover?.contentSize = NSSize(width: 280, height: computePopoverHeight())
         popover?.behavior = .transient
         popover?.contentViewController = NSHostingController(rootView: UsageView(manager: usageManager))
     }
@@ -100,25 +112,75 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem?.button else { return }
 
         guard let liveAccount = usageManager.accounts.first(where: { $0.isCurrentAccount }) else {
-            // No live account yet — loading or not logged in
-            if usageManager.accounts.contains(where: { $0.error != nil }) {
-                button.title = "❌"
+            // No live account yet — loading or not logged in (D1: also check noAccountError)
+            if usageManager.accounts.contains(where: { $0.error != nil }) || usageManager.noAccountError != nil {
+                button.image = statusImage(symbolName: "xmark.circle.fill", color: .systemRed)
+                button.title = ""
             } else {
-                button.title = "⏳"
+                button.image = statusImage(symbolName: "clock.arrow.circlepath", color: .secondaryLabelColor)
+                button.title = ""
             }
+            button.imagePosition = .imageLeading
             return
         }
 
-        if let usage = liveAccount.usage {
-            // Worst-case across session and weekly for the live account (OQ-3: stale excluded)
-            let worstCasePct = max(usage.sessionPercentage, usage.weeklyPercentage)
-            let emoji = usageManager.statusEmoji
-            button.title = "\(emoji) \(worstCasePct)%"
+        if let pct = usageManager.worstCaseUtilization {
+            // Worst-case across live accounts (OQ-3: stale excluded)
+            let color: NSColor
+            let symbolName = "circle.fill"
+            if pct >= 90 {
+                color = .systemRed
+            } else if pct >= 70 {
+                color = .systemOrange
+            } else {
+                color = .systemGreen
+            }
+            button.image = statusImage(symbolName: symbolName, color: color)
+            button.title = " \(pct)%"
+            button.imagePosition = .imageLeading
         } else if liveAccount.error != nil {
-            button.title = "❌"
+            button.image = statusImage(symbolName: "xmark.circle.fill", color: .systemRed)
+            button.title = ""
+            button.imagePosition = .imageLeading
         } else {
-            button.title = "⏳"
+            button.image = statusImage(symbolName: "clock.arrow.circlepath", color: .secondaryLabelColor)
+            button.title = ""
+            button.imagePosition = .imageLeading
         }
+    }
+
+    func updatePopoverSize() {
+        popover?.contentSize = NSSize(width: 280, height: computePopoverHeight())
+    }
+
+    private func computePopoverHeight() -> CGFloat {
+        let accounts = usageManager.accounts
+        guard accounts.count > 1 else { return 320 }
+
+        let headerFooter: CGFloat = 144 // ~44pt header + ~100pt footer
+        let expandedRowHeight: CGFloat = 236 // 56pt row header + ~180pt detail
+        let collapsedRowHeight: CGFloat = 56
+
+        // Default: live accounts expanded, stale accounts collapsed
+        let liveCount = accounts.filter { $0.isCurrentAccount }.count
+        let staleCount = accounts.count - liveCount
+        let contentHeight = CGFloat(liveCount) * expandedRowHeight + CGFloat(staleCount) * collapsedRowHeight
+
+        let total = headerFooter + contentHeight
+        return min(max(total, 200), 480)
+    }
+
+    private func statusImage(symbolName: String, color: NSColor) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return nil }
+        let tinted = image.copy() as! NSImage
+        tinted.lockFocus()
+        color.set()
+        NSRect(origin: .zero, size: tinted.size).fill(using: .sourceAtop)
+        tinted.unlockFocus()
+        tinted.isTemplate = false
+        return tinted
     }
 
     @objc func togglePopover() {

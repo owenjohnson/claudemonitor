@@ -22,6 +22,10 @@ class UsageManager: ObservableObject {
 
     @Published var updateAvailable: String?
 
+    /// Error to display when no accounts exist (e.g., not logged in).
+    /// Cleared on successful token acquisition. Surfaced via the `error` convenience accessor.
+    @Published private(set) var noAccountError: String?
+
     /// In-memory token from the last successful keychain read.
     /// Used to detect account switches without calling the profile API on every poll.
     private var lastSeenToken: String?
@@ -50,8 +54,9 @@ class UsageManager: ObservableObject {
     }
 
     /// The current account's error string, or nil.
+    /// Falls back to noAccountError when no live account exists (D1).
     var error: String? {
-        accounts.first(where: { $0.isCurrentAccount })?.error
+        accounts.first(where: { $0.isCurrentAccount })?.error ?? noAccountError
     }
 
     /// True while the live account is loading.
@@ -79,6 +84,16 @@ class UsageManager: ObservableObject {
         if maxUtil >= 90 { return "🔴" }
         if maxUtil >= 70 { return "🟡" }
         return "🟢"
+    }
+
+    /// Worst-case utilization percentage across live accounts only (stale excluded, OQ-3).
+    var worstCaseUtilization: Int? {
+        let liveAccounts = accounts.filter { $0.isCurrentAccount }
+        guard !liveAccounts.isEmpty else { return nil }
+        let maxUtil = liveAccounts.compactMap { $0.usage }.reduce(0.0) { maxSoFar, u in
+            max(maxSoFar, u.sessionUtilization, u.weeklyUtilization)
+        }
+        return Int(maxUtil)
     }
 
     // MARK: - Refresh
@@ -123,6 +138,7 @@ class UsageManager: ObservableObject {
     /// Live account: fetch usage with the current token.
     /// Stale accounts: keep last-known data (no token available).
     private func refreshAllAccounts(liveToken: String) async {
+        noAccountError = nil  // Clear no-account error on successful token acquisition (D1)
         setCurrentAccountLoading(true)
         clearCurrentAccountError()
 
@@ -184,9 +200,10 @@ class UsageManager: ObservableObject {
             accounts[index].error = error
             accounts[index].lastUpdated = usage != nil ? Date() : accounts[index].lastUpdated
             accounts[index].isLoading = false
-        } else if error != nil {
-            // No live account record yet (e.g., not logged in): surface error via a placeholder.
-            // UsageView checks currentError via the convenience accessor above.
+        } else if let errorMsg = error {
+            // No live account in array (e.g., not logged in): surface error via
+            // noAccountError so the convenience accessor and UI pick it up (D1).
+            noAccountError = errorMsg
         }
     }
 
@@ -361,6 +378,17 @@ class UsageManager: ObservableObject {
     func saveAccounts(_ records: [AccountRecord]) {
         guard let data = try? JSONEncoder().encode(records) else { return }
         UserDefaults.standard.set(data, forKey: Self.accountsDefaultsKey)
+    }
+
+    /// Remove a stale account by email from UserDefaults and the in-memory accounts array (C12).
+    /// Only non-current accounts may be removed. Removal persists across relaunches.
+    func removeAccount(email: String) {
+        // Guard: do not remove the live account
+        guard accounts.first(where: { $0.account.email == email })?.isCurrentAccount != true else { return }
+        var records = loadAccounts()
+        records.removeAll { $0.email == email }
+        saveAccounts(records)
+        accounts.removeAll { $0.account.email == email }
     }
 
     // MARK: - Network: Usage
