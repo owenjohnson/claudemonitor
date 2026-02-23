@@ -26,6 +26,9 @@ class UsageManager: ObservableObject {
     /// Used to detect account switches without calling the profile API on every poll.
     private var lastSeenToken: String?
 
+    /// Guard to prevent overlapping refresh cycles (B2).
+    private var isRefreshing = false
+
     static let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     static let githubRepo = "richhickson/claudecodeusage"
 
@@ -81,42 +84,84 @@ class UsageManager: ObservableObject {
     // MARK: - Refresh
 
     func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         await refreshWithRetry(retriesRemaining: 3)
     }
 
+    /// Loop-based retry (B-pre: replaces recursive pattern that skipped loading-state reset on retry paths).
     private func refreshWithRetry(retriesRemaining: Int) async {
+        var attemptsLeft = retriesRemaining
+
+        while true {
+            do {
+                let (token, tokenChanged) = try await getAccessTokenWithChangeDetection()
+
+                if tokenChanged {
+                    await updateAccountRecord(for: token)
+                }
+
+                await refreshAllAccounts(liveToken: token)
+                return
+            } catch let keychainError as KeychainError {
+                if attemptsLeft > 0 && keychainError.isRetryable {
+                    attemptsLeft -= 1
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    continue
+                }
+                publishLiveAccountUpdate(usage: nil, error: keychainError.localizedDescription)
+                return
+            } catch {
+                publishLiveAccountUpdate(usage: nil, error: error.localizedDescription)
+                return
+            }
+        }
+    }
+
+    /// Refresh all accounts using TaskGroup for concurrent per-account fetches (B4/B5).
+    /// Live account: fetch usage with the current token.
+    /// Stale accounts: keep last-known data (no token available).
+    private func refreshAllAccounts(liveToken: String) async {
         setCurrentAccountLoading(true)
         clearCurrentAccountError()
 
-        do {
-            let (token, tokenChanged) = try await getAccessTokenWithChangeDetection()
+        let session = urlSession
+        let version = Self.currentVersion
 
-            // Gate profile API call on token change (A5/A6).
-            if tokenChanged {
-                await updateAccountRecord(for: token)
+        await withTaskGroup(of: (String, UsageData?, String?).self) { group in
+            for account in accounts {
+                let email = account.account.email
+                let isCurrent = account.isCurrentAccount
+
+                group.addTask {
+                    guard isCurrent else {
+                        // Stale account: no live token, preserve last-known data
+                        return (email, nil, nil)
+                    }
+                    // Per-account error isolation (B5)
+                    do {
+                        let usage = try await Self.fetchUsage(
+                            token: liveToken, session: session, version: version
+                        )
+                        return (email, usage, nil)
+                    } catch {
+                        return (email, nil, error.localizedDescription)
+                    }
+                }
             }
 
-            let usageData = try await fetchUsage(token: token)
-            publishLiveAccountUpdate(usage: usageData, error: nil)
-        } catch let keychainError as KeychainError {
-            if retriesRemaining > 0 && keychainError.isRetryable {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                await refreshWithRetry(retriesRemaining: retriesRemaining - 1)
-                return
+            // Collect results back on @MainActor
+            for await (email, usage, error) in group {
+                guard let index = accounts.firstIndex(where: { $0.account.email == email }) else { continue }
+                if accounts[index].isCurrentAccount {
+                    accounts[index].usage = usage ?? accounts[index].usage
+                    accounts[index].error = error
+                    accounts[index].lastUpdated = usage != nil ? Date() : accounts[index].lastUpdated
+                    accounts[index].isLoading = false
+                }
             }
-            publishLiveAccountUpdate(usage: nil, error: keychainError.localizedDescription)
-        } catch let urlError as URLError {
-            if retriesRemaining > 0 && urlError.isRetryable {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                await refreshWithRetry(retriesRemaining: retriesRemaining - 1)
-                return
-            }
-            publishLiveAccountUpdate(usage: nil, error: urlError.localizedDescription)
-        } catch {
-            publishLiveAccountUpdate(usage: nil, error: error.localizedDescription)
         }
-
-        setCurrentAccountLoading(false)
     }
 
     // MARK: - accounts array helpers
@@ -320,16 +365,20 @@ class UsageManager: ObservableObject {
 
     // MARK: - Network: Usage
 
-    private func fetchUsage(token: String) async throws -> UsageData {
+    /// Nonisolated static usage fetch for TaskGroup compatibility (B1/B4).
+    /// Takes dependencies as parameters instead of accessing @MainActor self.
+    private nonisolated static func fetchUsage(
+        token: String, session: URLSession, version: String
+    ) async throws -> UsageData {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("ClaudeUsage/\(Self.currentVersion)", forHTTPHeaderField: "User-Agent")
+        request.setValue("ClaudeUsage/\(version)", forHTTPHeaderField: "User-Agent")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
 
-        let (data, response) = try await urlSession.data(for: request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UsageError.invalidResponse
@@ -434,7 +483,7 @@ class UsageManager: ObservableObject {
 
     // MARK: - Utilities
 
-    private func parseDate(_ string: String?) -> Date? {
+    private nonisolated static func parseDate(_ string: String?) -> Date? {
         guard let string = string else { return nil }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

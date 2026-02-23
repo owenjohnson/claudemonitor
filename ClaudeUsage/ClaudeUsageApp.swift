@@ -71,8 +71,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             await usageManager.checkForUpdates()
         }
 
-        // Refresh every 2 minutes
-        timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
+        // Refresh every 60 seconds (B3: reduced from 120s to enable faster account-switch detection)
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.usageManager.refresh()
             }
