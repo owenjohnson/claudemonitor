@@ -16,15 +16,20 @@ struct UsageData {
 
 @MainActor
 class UsageManager: ObservableObject {
-    @Published var usage: UsageData?
-    @Published var error: String?
-    @Published var isLoading = false
-    @Published var lastUpdated: Date?
+    /// All known accounts with their current fetch state. Replaces the five individual
+    /// @Published vars (usage, error, isLoading, lastUpdated, displayName) from v1.7.
+    @Published var accounts: [AccountUsage] = []
+
     @Published var updateAvailable: String?
-    @Published var displayName: String?
+
+    /// In-memory token from the last successful keychain read.
+    /// Used to detect account switches without calling the profile API on every poll.
+    private var lastSeenToken: String?
 
     static let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     static let githubRepo = "richhickson/claudecodeusage"
+
+    private static let accountsDefaultsKey = "claudeusage.accounts"
 
     // Configured URLSession with timeouts
     private lazy var urlSession: URLSession = {
@@ -34,114 +39,237 @@ class UsageManager: ObservableObject {
         return URLSession(configuration: config)
     }()
 
+    // MARK: - Convenience accessors (single-account compatibility for UsageView/AppDelegate)
+
+    /// The current (live) account's usage, or nil if no live account is loaded yet.
+    var usage: UsageData? {
+        accounts.first(where: { $0.isCurrentAccount })?.usage
+    }
+
+    /// The current account's error string, or nil.
+    var error: String? {
+        accounts.first(where: { $0.isCurrentAccount })?.error
+    }
+
+    /// True while the live account is loading.
+    var isLoading: Bool {
+        accounts.first(where: { $0.isCurrentAccount })?.isLoading ?? false
+    }
+
+    /// Last update timestamp for the live account.
+    var lastUpdated: Date? {
+        accounts.first(where: { $0.isCurrentAccount })?.lastUpdated
+    }
+
+    /// Display name for the live account.
+    var displayName: String? {
+        accounts.first(where: { $0.isCurrentAccount })?.account.displayName
+    }
+
+    /// Worst-case utilization emoji across live accounts only (stale accounts excluded, per OQ-3).
     var statusEmoji: String {
-        guard let usage = usage else { return "❓" }
-        let maxUtil = max(usage.sessionUtilization, usage.weeklyUtilization)
+        let liveAccounts = accounts.filter { $0.isCurrentAccount }
+        guard !liveAccounts.isEmpty else { return "❓" }
+        let maxUtil = liveAccounts.compactMap { $0.usage }.reduce(0.0) { maxSoFar, u in
+            max(maxSoFar, u.sessionUtilization, u.weeklyUtilization)
+        }
         if maxUtil >= 90 { return "🔴" }
         if maxUtil >= 70 { return "🟡" }
         return "🟢"
     }
+
+    // MARK: - Refresh
 
     func refresh() async {
         await refreshWithRetry(retriesRemaining: 3)
     }
 
     private func refreshWithRetry(retriesRemaining: Int) async {
-        isLoading = true
-        error = nil
-
-        defer { isLoading = false }
+        setCurrentAccountLoading(true)
+        clearCurrentAccountError()
 
         do {
-            let token = try await getAccessToken()
-            let data = try await fetchUsage(token: token)
-            usage = data
-            lastUpdated = Date()
-            displayName = try? await fetchDisplayName(token: token)
+            let (token, tokenChanged) = try await getAccessTokenWithChangeDetection()
+
+            // Gate profile API call on token change (A5/A6).
+            if tokenChanged {
+                await updateAccountRecord(for: token)
+            }
+
+            let usageData = try await fetchUsage(token: token)
+            publishLiveAccountUpdate(usage: usageData, error: nil)
         } catch let keychainError as KeychainError {
-            // Retry on keychain errors that may resolve after unlock
             if retriesRemaining > 0 && keychainError.isRetryable {
-                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
                 await refreshWithRetry(retriesRemaining: retriesRemaining - 1)
                 return
             }
-            self.error = keychainError.localizedDescription
+            publishLiveAccountUpdate(usage: nil, error: keychainError.localizedDescription)
         } catch let urlError as URLError {
-            // Retry on network errors (common after wake from sleep)
             if retriesRemaining > 0 && urlError.isRetryable {
-                try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds for network
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
                 await refreshWithRetry(retriesRemaining: retriesRemaining - 1)
                 return
             }
-            self.error = urlError.localizedDescription
+            publishLiveAccountUpdate(usage: nil, error: urlError.localizedDescription)
         } catch {
-            self.error = error.localizedDescription
+            publishLiveAccountUpdate(usage: nil, error: error.localizedDescription)
+        }
+
+        setCurrentAccountLoading(false)
+    }
+
+    // MARK: - accounts array helpers
+
+    private func setCurrentAccountLoading(_ loading: Bool) {
+        if let index = accounts.firstIndex(where: { $0.isCurrentAccount }) {
+            accounts[index].isLoading = loading
         }
     }
 
-    private func getAccessToken() async throws -> String {
-        // Get token from Claude Code's keychain via security CLI
-        return try getClaudeCodeToken()
+    private func clearCurrentAccountError() {
+        if let index = accounts.firstIndex(where: { $0.isCurrentAccount }) {
+            accounts[index].error = nil
+        }
+    }
+
+    private func publishLiveAccountUpdate(usage: UsageData?, error: String?) {
+        if let index = accounts.firstIndex(where: { $0.isCurrentAccount }) {
+            accounts[index].usage = usage
+            accounts[index].error = error
+            accounts[index].lastUpdated = usage != nil ? Date() : accounts[index].lastUpdated
+            accounts[index].isLoading = false
+        } else if error != nil {
+            // No live account record yet (e.g., not logged in): surface error via a placeholder.
+            // UsageView checks currentError via the convenience accessor above.
+        }
+    }
+
+    /// Rebuild the in-memory accounts array from persisted records after a successful
+    /// profile fetch, marking the new current account as live and all others as stale.
+    private func rebuildAccountsFromRecords(currentEmail: String) {
+        let records = loadAccounts()
+        var updated: [AccountUsage] = []
+
+        for record in records {
+            let isCurrent = record.email == currentEmail
+            if isCurrent {
+                // Preserve existing live account data if already present
+                if let existing = accounts.first(where: { $0.account.email == record.email }) {
+                    var au = existing
+                    au.isCurrentAccount = true
+                    updated.append(au)
+                } else {
+                    updated.append(AccountUsage(
+                        account: record,
+                        usage: nil,
+                        error: nil,
+                        isLoading: true,
+                        lastUpdated: nil,
+                        isCurrentAccount: true
+                    ))
+                }
+            } else {
+                // Preserve stale account's last-known data
+                if let existing = accounts.first(where: { $0.account.email == record.email }) {
+                    var au = existing
+                    au.isCurrentAccount = false
+                    updated.append(au)
+                } else {
+                    updated.append(AccountUsage(
+                        account: record,
+                        usage: nil,
+                        error: nil,
+                        isLoading: false,
+                        lastUpdated: nil,
+                        isCurrentAccount: false
+                    ))
+                }
+            }
+        }
+
+        accounts = updated
+    }
+
+    // MARK: - Token detection
+
+    private func getAccessTokenWithChangeDetection() async throws -> (token: String, tokenChanged: Bool) {
+        let token = try await getClaudeCodeToken()
+        let changed = token != lastSeenToken
+        if changed {
+            lastSeenToken = token
+        }
+        return (token, changed)
+    }
+
+    // MARK: - Keychain reading
+
+    /// Read raw JSON string from the keychain using the security CLI.
+    /// Runs off @MainActor via nonisolated + terminationHandler to avoid blocking the main thread.
+    private nonisolated func readKeychainRawJSON(service: String) async throws -> String {
+        return try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            let pipe = Pipe()
+            let errorPipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+            process.arguments = ["find-generic-password", "-s", service, "-w"]
+            process.standardOutput = pipe
+            process.standardError = errorPipe
+            process.terminationHandler = { proc in
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorString = String(data: errorData, encoding: .utf8) ?? ""
+                guard proc.terminationStatus == 0 else {
+                    if errorString.contains("could not be found") {
+                        continuation.resume(throwing: KeychainError.notLoggedIn)
+                    } else {
+                        continuation.resume(throwing: KeychainError.securityCommandFailed(
+                            errorString.isEmpty ? "Exit code \(proc.terminationStatus)" : errorString
+                        ))
+                    }
+                    return
+                }
+                guard let result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !result.isEmpty else {
+                    continuation.resume(throwing: KeychainError.notLoggedIn)
+                    return
+                }
+                continuation.resume(returning: result)
+            }
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: KeychainError.unexpectedError(status: -1))
+            }
+        }
     }
 
     /// Get token from Claude Code's keychain using security CLI (avoids ACL prompt!)
-    private func getClaudeCodeToken() throws -> String {
-        // Use security CLI which is already in the keychain ACL
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
-
-        let pipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = errorPipe
-
+    private func getClaudeCodeToken() async throws -> String {
+        let jsonString: String
         do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            throw KeychainError.unexpectedError(status: -1)
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorString = String(data: errorData, encoding: .utf8) ?? ""
-
-        guard process.terminationStatus == 0 else {
-            // Try alternate keychain entry as fallback
-            if let token = try? getAccessTokenFromAlternateKeychain() {
-                return token
-            }
-            // Include error detail for debugging
-            if errorString.contains("could not be found") {
-                throw KeychainError.notLoggedIn
-            }
-            throw KeychainError.securityCommandFailed(errorString.isEmpty ? "Exit code \(process.terminationStatus)" : errorString)
-        }
-
-        guard let jsonString = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !jsonString.isEmpty else {
-            if let token = try? getAccessTokenFromAlternateKeychain() {
+            jsonString = try await readKeychainRawJSON(service: "Claude Code-credentials")
+        } catch KeychainError.notLoggedIn, KeychainError.securityCommandFailed {
+            if let token = try? await getAccessTokenFromAlternateKeychain() {
                 return token
             }
             throw KeychainError.notLoggedIn
         }
 
-        // Try to parse as OAuth credentials
         if let jsonData = jsonString.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
-            // Check for claudeAiOauth structure
             if let oauth = json["claudeAiOauth"] as? [String: Any],
                let accessToken = oauth["accessToken"] as? String {
                 return accessToken
             }
-            // Show what keys ARE present for debugging
             let keys = Array(json.keys).joined(separator: ", ")
+            if let token = try? await getAccessTokenFromAlternateKeychain() {
+                return token
+            }
             throw KeychainError.missingOAuthToken(availableKeys: keys)
         }
 
-        // Primary entry doesn't have OAuth - try alternate keychain
-        if let token = try? getAccessTokenFromAlternateKeychain() {
+        if let token = try? await getAccessTokenFromAlternateKeychain() {
             return token
         }
 
@@ -149,29 +277,10 @@ class UsageManager: ObservableObject {
     }
 
     /// Fallback: Check for "Claude Code" keychain entry (alternate storage location)
-    private func getAccessTokenFromAlternateKeychain() throws -> String {
-        // Use security CLI which is already in the keychain ACL
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", "Claude Code", "-w"]
+    private func getAccessTokenFromAlternateKeychain() async throws -> String {
+        let jsonString = try await readKeychainRawJSON(service: "Claude Code")
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            throw KeychainError.notLoggedIn
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-
-        guard process.terminationStatus == 0,
-              let jsonString = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !jsonString.isEmpty,
-              let jsonData = jsonString.data(using: .utf8),
+        guard let jsonData = jsonString.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let oauth = json["claudeAiOauth"] as? [String: Any],
               let accessToken = oauth["accessToken"] as? String else {
@@ -180,6 +289,36 @@ class UsageManager: ObservableObject {
 
         return accessToken
     }
+
+    /// Extract the accessToken string from raw keychain JSON without throwing.
+    nonisolated func extractAccessToken(from rawJSON: String) -> String? {
+        guard let jsonData = rawJSON.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let oauth = json["claudeAiOauth"] as? [String: Any],
+              let accessToken = oauth["accessToken"] as? String else {
+            return nil
+        }
+        return accessToken
+    }
+
+    // MARK: - UserDefaults Persistence (A2)
+
+    /// Load persisted account records from UserDefaults. Returns empty array on fresh install.
+    func loadAccounts() -> [AccountRecord] {
+        guard let data = UserDefaults.standard.data(forKey: Self.accountsDefaultsKey),
+              let records = try? JSONDecoder().decode([AccountRecord].self, from: data) else {
+            return []
+        }
+        return records
+    }
+
+    /// Persist account records to UserDefaults.
+    func saveAccounts(_ records: [AccountRecord]) {
+        guard let data = try? JSONEncoder().encode(records) else { return }
+        UserDefaults.standard.set(data, forKey: Self.accountsDefaultsKey)
+    }
+
+    // MARK: - Network: Usage
 
     private func fetchUsage(token: String) async throws -> UsageData {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
@@ -218,7 +357,18 @@ class UsageManager: ObservableObject {
         )
     }
 
-    private func fetchDisplayName(token: String) async throws -> String? {
+    // MARK: - Network: Profile
+
+    /// Structured profile data returned from the OAuth profile endpoint.
+    struct ProfileData {
+        let email: String
+        let displayName: String?
+        let organizationName: String?
+        let subscriptionType: String?
+    }
+
+    /// Fetch full profile data from /api/oauth/profile. Returns nil on non-200 responses.
+    private func fetchProfileData(token: String) async throws -> ProfileData? {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -230,12 +380,59 @@ class UsageManager: ObservableObject {
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200,
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let account = json["account"] as? [String: Any] else {
+              let accountDict = json["account"] as? [String: Any],
+              let email = accountDict["email"] as? String else {
             return nil
         }
 
-        return account["display_name"] as? String ?? account["full_name"] as? String
+        let displayName = accountDict["display_name"] as? String ?? accountDict["full_name"] as? String
+        let org = json["organization"] as? [String: Any]
+        let organizationName = org?["name"] as? String
+        let subscriptionType = accountDict["subscription_type"] as? String
+
+        return ProfileData(
+            email: email,
+            displayName: displayName,
+            organizationName: organizationName,
+            subscriptionType: subscriptionType
+        )
     }
+
+    // MARK: - Account record management (A6)
+
+    /// Create or update an AccountRecord in UserDefaults when a token change is detected.
+    /// Also rebuilds the in-memory `accounts` array with the new current account marked live.
+    @discardableResult
+    private func updateAccountRecord(for token: String) async -> String? {
+        guard let profile = try? await fetchProfileData(token: token) else { return nil }
+
+        var records = loadAccounts()
+        let now = Date()
+
+        if let index = records.firstIndex(where: { $0.email == profile.email }) {
+            records[index].displayName = profile.displayName
+            records[index].organizationName = profile.organizationName
+            records[index].subscriptionType = profile.subscriptionType
+            records[index].lastTokenCapturedAt = now
+        } else {
+            let newRecord = AccountRecord(
+                email: profile.email,
+                displayName: profile.displayName,
+                organizationName: profile.organizationName,
+                subscriptionType: profile.subscriptionType,
+                tokenExpiresAt: nil,
+                lastTokenCapturedAt: now,
+                addedAt: now
+            )
+            records.append(newRecord)
+        }
+
+        saveAccounts(records)
+        rebuildAccountsFromRecords(currentEmail: profile.email)
+        return profile.email
+    }
+
+    // MARK: - Utilities
 
     private func parseDate(_ string: String?) -> Date? {
         guard let string = string else { return nil }
@@ -318,7 +515,6 @@ enum KeychainError: LocalizedError {
     var isRetryable: Bool {
         switch self {
         case .notLoggedIn, .invalidCredentialFormat, .invalidData, .interactionNotAllowed, .securityCommandFailed:
-            // notLoggedIn is retryable because keychain may not be accessible immediately after boot
             return true
         case .accessDenied, .unexpectedError, .missingOAuthToken:
             return false

@@ -41,13 +41,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func setupUsageObserver() {
-        // Auto-update status item when usage or error changes
-        usageManager.$usage
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateStatusItem() }
-            .store(in: &cancellables)
-
-        usageManager.$error
+        // Auto-update status item when accounts array changes (A8).
+        // $accounts replaces the former $usage and $error sinks.
+        usageManager.$accounts
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
@@ -65,10 +61,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initial fetch and update check
         Task {
             // If system recently booted (within 60 seconds), wait before accessing keychain
-            // The keychain/login system takes time to be fully available after boot
             let uptime = ProcessInfo.processInfo.systemUptime
             if uptime < 60 {
-                let delaySeconds = max(30 - uptime, 5) // Wait until ~30s after boot, minimum 5s
+                let delaySeconds = max(30 - uptime, 5)
                 try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
             }
 
@@ -83,7 +78,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
-    
+
     func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -93,36 +88,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
         }
     }
-    
+
     func setupPopover() {
         popover = NSPopover()
         popover?.contentSize = NSSize(width: 280, height: 320)
         popover?.behavior = .transient
         popover?.contentViewController = NSHostingController(rootView: UsageView(manager: usageManager))
     }
-    
+
     func updateStatusItem() {
         guard let button = statusItem?.button else { return }
 
-        if let usage = usageManager.usage {
-            let sessionPct = usage.sessionPercentage
+        guard let liveAccount = usageManager.accounts.first(where: { $0.isCurrentAccount }) else {
+            // No live account yet — loading or not logged in
+            if usageManager.accounts.contains(where: { $0.error != nil }) {
+                button.title = "❌"
+            } else {
+                button.title = "⏳"
+            }
+            return
+        }
+
+        if let usage = liveAccount.usage {
+            // Worst-case across session and weekly for the live account (OQ-3: stale excluded)
+            let worstCasePct = max(usage.sessionPercentage, usage.weeklyPercentage)
             let emoji = usageManager.statusEmoji
-            button.title = "\(emoji) \(sessionPct)%"
-        } else if usageManager.error != nil {
+            button.title = "\(emoji) \(worstCasePct)%"
+        } else if liveAccount.error != nil {
             button.title = "❌"
         } else {
             button.title = "⏳"
         }
     }
-    
+
     @objc func togglePopover() {
         guard let button = statusItem?.button, let popover = popover else { return }
-        
+
         if popover.isShown {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            
+
             // Bring to front
             NSApp.activate(ignoringOtherApps: true)
         }
