@@ -100,18 +100,18 @@ struct UsageView: View {
                 subtitle: "5-hour window",
                 percentage: usage.sessionPercentage,
                 resetsAt: usage.sessionResetsAt,
-                color: colorForPercentage(usage.sessionPercentage)
+                color: Color.forUtilization(usage.sessionPercentage)
             )
-            
+
             // Weekly usage
             UsageRow(
                 title: "Weekly",
                 subtitle: "7-day window",
                 percentage: usage.weeklyPercentage,
                 resetsAt: usage.weeklyResetsAt,
-                color: colorForPercentage(usage.weeklyPercentage)
+                color: Color.forUtilization(usage.weeklyPercentage)
             )
-            
+
             // Sonnet only (if available)
             if let sonnetPct = usage.sonnetPercentage {
                 UsageRow(
@@ -119,7 +119,7 @@ struct UsageView: View {
                     subtitle: "Model-specific",
                     percentage: sonnetPct,
                     resetsAt: usage.sonnetResetsAt,
-                    color: colorForPercentage(sonnetPct)
+                    color: Color.forUtilization(sonnetPct)
                 )
             }
         }
@@ -261,12 +261,6 @@ struct UsageView: View {
         .background(Color(NSColor.controlBackgroundColor))
     }
     
-    func colorForPercentage(_ pct: Int) -> Color {
-        if pct >= 90 { return .red }
-        if pct >= 70 { return .orange }
-        return .green
-    }
-
     func launchClaudeCLI() {
         let script = """
         tell application "Terminal"
@@ -360,65 +354,6 @@ struct UsageRow: View {
         }
         
         return "in \(hours)h \(minutes)m"
-    }
-}
-
-// MARK: - LiveIndicator
-
-struct LiveIndicator: View {
-    @State private var isPulsing = false
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(Color.green)
-                .frame(width: 8, height: 8)
-                .scaleEffect(isPulsing ? 1.3 : 1.0)
-                .animation(
-                    .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
-                    value: isPulsing
-                )
-                .onAppear { isPulsing = true }
-            Text("Live")
-                .font(.caption)
-                .foregroundColor(.green)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Live account")
-    }
-}
-
-// MARK: - CachedBadge (Active: cached token, still refreshing)
-
-struct CachedBadge: View {
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(Color.blue)
-                .frame(width: 8, height: 8)
-            Text("Active")
-                .font(.caption)
-                .foregroundColor(.blue)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Active account with cached token")
-    }
-}
-
-// MARK: - StaleBadge (C3)
-
-struct StaleBadge: View {
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "clock")
-                .font(.caption2)
-                .foregroundColor(Color(NSColor.secondaryLabelColor))
-            Text("Stale")
-                .font(.caption)
-                .foregroundColor(Color(NSColor.secondaryLabelColor))
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Stale account")
     }
 }
 
@@ -531,9 +466,9 @@ struct AccountDisclosureGroup: View {
 
     private var account: AccountRecord { accountUsage.account }
 
+    // Uses bottleneck (D4) as the single source of truth — includes sonnet utilization.
     private var highestUtilization: Int {
-        guard let usage = accountUsage.usage else { return 0 }
-        return max(usage.sessionPercentage, usage.weeklyPercentage)
+        accountUsage.usage?.bottleneck.percentage ?? 0
     }
 
     private var utilizationColor: Color {
@@ -541,7 +476,7 @@ struct AccountDisclosureGroup: View {
         guard accountUsage.isCurrentAccount || accountUsage.isActivelyRefreshing else {
             return Color(NSColor.secondaryLabelColor)
         }
-        return colorForPercentage(highestUtilization)
+        return Color.forUtilization(highestUtilization)
     }
 
     var body: some View {
@@ -604,7 +539,7 @@ struct AccountDisclosureGroup: View {
                     subtitle: "5-hour window",
                     percentage: usage.sessionPercentage,
                     resetsAt: usage.sessionResetsAt,
-                    color: colorForPercentage(usage.sessionPercentage),
+                    color: Color.forUtilization(usage.sessionPercentage),
                     style: .inline
                 )
                 UsageRow(
@@ -612,7 +547,7 @@ struct AccountDisclosureGroup: View {
                     subtitle: "7-day window",
                     percentage: usage.weeklyPercentage,
                     resetsAt: usage.weeklyResetsAt,
-                    color: colorForPercentage(usage.weeklyPercentage),
+                    color: Color.forUtilization(usage.weeklyPercentage),
                     style: .inline
                 )
                 if let sonnetPct = usage.sonnetPercentage {
@@ -621,7 +556,7 @@ struct AccountDisclosureGroup: View {
                         subtitle: "Model-specific",
                         percentage: sonnetPct,
                         resetsAt: usage.sonnetResetsAt,
-                        color: colorForPercentage(sonnetPct),
+                        color: Color.forUtilization(sonnetPct),
                         style: .inline
                     )
                 }
@@ -682,11 +617,6 @@ struct AccountDisclosureGroup: View {
         .padding(.horizontal, 12)
     }
 
-    private func colorForPercentage(_ pct: Int) -> Color {
-        if pct >= 90 { return .red }
-        if pct >= 70 { return .orange }
-        return .green
-    }
 }
 
 // MARK: - AccountList (C5/C6): multi-account accordion with ScrollView

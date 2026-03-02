@@ -12,6 +12,19 @@ struct UsageData {
     var sessionPercentage: Int { Int(sessionUtilization) }
     var weeklyPercentage: Int { Int(weeklyUtilization) }
     var sonnetPercentage: Int? { sonnetUtilization.map { Int($0) } }
+
+    /// Single source of truth for worst-case utilization across all categories (D4).
+    /// Includes sonnet when available — intentional behavioral change per ADR-002 D4.
+    var bottleneck: (percentage: Int, category: String) {
+        var worst = (percentage: sessionPercentage, category: "Session")
+        if weeklyPercentage > worst.percentage {
+            worst = (percentage: weeklyPercentage, category: "Weekly")
+        }
+        if let sonnet = sonnetPercentage, sonnet > worst.percentage {
+            worst = (percentage: sonnet, category: "Sonnet")
+        }
+        return worst
+    }
 }
 
 @MainActor
@@ -80,25 +93,22 @@ class UsageManager: ObservableObject {
     }
 
     /// Worst-case utilization emoji across live and actively-refreshing accounts (stale excluded).
+    /// Uses bottleneck.percentage (D4) — includes sonnet utilization in the comparison.
     var statusEmoji: String {
         let activeAccounts = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }
         guard !activeAccounts.isEmpty else { return "❓" }
-        let maxUtil = activeAccounts.compactMap { $0.usage }.reduce(0.0) { maxSoFar, u in
-            max(maxSoFar, u.sessionUtilization, u.weeklyUtilization)
-        }
+        let maxUtil = activeAccounts.compactMap { $0.usage }.map { $0.bottleneck.percentage }.max() ?? 0
         if maxUtil >= 90 { return "🔴" }
         if maxUtil >= 70 { return "🟡" }
         return "🟢"
     }
 
     /// Worst-case utilization percentage across live and actively-refreshing accounts (stale excluded).
+    /// Uses bottleneck.percentage (D4) — includes sonnet utilization in the comparison.
     var worstCaseUtilization: Int? {
         let activeAccounts = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }
         guard !activeAccounts.isEmpty else { return nil }
-        let maxUtil = activeAccounts.compactMap { $0.usage }.reduce(0.0) { maxSoFar, u in
-            max(maxSoFar, u.sessionUtilization, u.weeklyUtilization)
-        }
-        return Int(maxUtil)
+        return activeAccounts.compactMap { $0.usage }.map { $0.bottleneck.percentage }.max()
     }
 
     // MARK: - Refresh

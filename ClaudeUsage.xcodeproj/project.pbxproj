@@ -12,6 +12,7 @@
 		003 /* UsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103 /* UsageView.swift */; };
 		004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 104 /* Assets.xcassets */; };
 		005 /* AccountModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106 /* AccountModels.swift */; };
+		006 /* SharedStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107 /* SharedStyles.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +23,7 @@
 		104 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		105 /* ClaudeUsage.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClaudeUsage.entitlements; sourceTree = "<group>"; };
 		106 /* AccountModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountModels.swift; sourceTree = "<group>"; };
+		107 /* SharedStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStyles.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +52,7 @@
 				102 /* UsageManager.swift */,
 				103 /* UsageView.swift */,
 				106 /* AccountModels.swift */,
+				107 /* SharedStyles.swift */,
 				104 /* Assets.xcassets */,
 				105 /* ClaudeUsage.entitlements */,
 			);
@@ -137,6 +140,7 @@
 				002 /* UsageManager.swift in Sources */,
 				003 /* UsageView.swift in Sources */,
 				005 /* AccountModels.swift in Sources */,
+				006 /* SharedStyles.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
