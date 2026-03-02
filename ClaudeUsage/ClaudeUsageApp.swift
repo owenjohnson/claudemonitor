@@ -157,14 +157,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let accounts = usageManager.accounts
         guard accounts.count > 1 else { return 320 }
 
-        let headerFooter: CGFloat = 144 // ~44pt header + ~100pt footer
-        let expandedRowHeight: CGFloat = 236 // 56pt row header + ~180pt detail
-        let collapsedRowHeight: CGFloat = 56
+        // D3/RF1: Updated for 48pt rows (D2) and 48pt compressed footer (D3).
+        // NOTE: collapsedRowHeight and expandedRowHeight are shared constants with
+        // computedScrollHeight in AccountList (UsageView.swift). Update both together (RF5).
+        let collapsedRowHeight: CGFloat = 48  // D2: reduced from 56pt
+        let expandedRowHeight: CGFloat = 228  // D2: reduced from 236pt (48pt header + ~180pt detail)
+        let headerFooter: CGFloat = 92        // 44pt app header + 48pt compressed footer (D3)
 
-        // Default: live and actively-refreshing accounts expanded, stale accounts collapsed
-        let expandedCount = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }.count
-        let collapsedCount = accounts.count - expandedCount
-        let contentHeight = CGFloat(expandedCount) * expandedRowHeight + CGFloat(collapsedCount) * collapsedRowHeight
+        // Assume 1 expanded + (N-1) collapsed rows (conservative formula per RF1).
+        let n = CGFloat(accounts.count)
+        let contentHeight = expandedRowHeight + (n - 1) * collapsedRowHeight
 
         let total = headerFooter + contentHeight
         return min(max(total, 200), 480)

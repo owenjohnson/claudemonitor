@@ -13,6 +13,10 @@
 		004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 104 /* Assets.xcassets */; };
 		005 /* AccountModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106 /* AccountModels.swift */; };
 		006 /* SharedStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107 /* SharedStyles.swift */; };
+		007 /* UsageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 108 /* UsageRow.swift */; };
+		008 /* AccountRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109 /* AccountRow.swift */; };
+		009 /* AccountDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110 /* AccountDetail.swift */; };
+		010 /* AccountList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111 /* AccountList.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +28,10 @@
 		105 /* ClaudeUsage.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClaudeUsage.entitlements; sourceTree = "<group>"; };
 		106 /* AccountModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountModels.swift; sourceTree = "<group>"; };
 		107 /* SharedStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStyles.swift; sourceTree = "<group>"; };
+		108 /* UsageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageRow.swift; sourceTree = "<group>"; };
+		109 /* AccountRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRow.swift; sourceTree = "<group>"; };
+		110 /* AccountDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDetail.swift; sourceTree = "<group>"; };
+		111 /* AccountList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountList.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +61,10 @@
 				103 /* UsageView.swift */,
 				106 /* AccountModels.swift */,
 				107 /* SharedStyles.swift */,
+				108 /* UsageRow.swift */,
+				109 /* AccountRow.swift */,
+				110 /* AccountDetail.swift */,
+				111 /* AccountList.swift */,
 				104 /* Assets.xcassets */,
 				105 /* ClaudeUsage.entitlements */,
 			);
@@ -141,6 +153,10 @@
 				003 /* UsageView.swift in Sources */,
 				005 /* AccountModels.swift in Sources */,
 				006 /* SharedStyles.swift in Sources */,
+				007 /* UsageRow.swift in Sources */,
+				008 /* AccountRow.swift in Sources */,
+				009 /* AccountDetail.swift in Sources */,
+				010 /* AccountList.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
