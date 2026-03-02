@@ -367,6 +367,7 @@ struct AccountHeader: View {
     let highestUtilization: Int
     let utilizationColor: Color
     let lastUpdated: Date?
+    let isExpanded: Bool   // D2: controls org name visibility in collapsed state
 
     init(
         email: String,
@@ -375,7 +376,8 @@ struct AccountHeader: View {
         isActivelyRefreshing: Bool = false,
         highestUtilization: Int,
         utilizationColor: Color,
-        lastUpdated: Date? = nil
+        lastUpdated: Date? = nil,
+        isExpanded: Bool = false
     ) {
         self.email = email
         self.organizationName = organizationName
@@ -384,6 +386,7 @@ struct AccountHeader: View {
         self.highestUtilization = highestUtilization
         self.utilizationColor = utilizationColor
         self.lastUpdated = lastUpdated
+        self.isExpanded = isExpanded
     }
 
     var body: some View {
@@ -393,7 +396,8 @@ struct AccountHeader: View {
                     .font(.headline)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                if let org = organizationName {
+                // D2: org name only shown when row is expanded
+                if isExpanded, let org = organizationName {
                     Text(org)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -422,9 +426,9 @@ struct AccountHeader: View {
                 .help(staleTooltip)
             }
         }
-        .frame(height: 56)
+        .frame(height: 48)         // D2: reduced from 56pt
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)     // D2: reduced from 8pt
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabelText)
         .accessibilityHint("Press Space to expand usage details")
@@ -454,15 +458,8 @@ struct AccountHeader: View {
 
 struct AccountDisclosureGroup: View {
     let accountUsage: AccountUsage
+    let isExpanded: Binding<Bool>   // D1: lifted state from AccountList
     let onRemove: (() -> Void)?
-    @State private var isExpanded: Bool
-
-    init(accountUsage: AccountUsage, onRemove: (() -> Void)? = nil) {
-        self.accountUsage = accountUsage
-        self.onRemove = onRemove
-        // Default: live and actively-refreshing accounts expanded, stale collapsed
-        _isExpanded = State(initialValue: accountUsage.isCurrentAccount || accountUsage.isActivelyRefreshing)
-    }
 
     private var account: AccountRecord { accountUsage.account }
 
@@ -481,7 +478,7 @@ struct AccountDisclosureGroup: View {
 
     var body: some View {
         DisclosureGroup(
-            isExpanded: $isExpanded,
+            isExpanded: isExpanded,
             content: { accountDetail },
             label: {
                 AccountHeader(
@@ -491,7 +488,8 @@ struct AccountDisclosureGroup: View {
                     isActivelyRefreshing: accountUsage.isActivelyRefreshing,
                     highestUtilization: highestUtilization,
                     utilizationColor: utilizationColor,
-                    lastUpdated: accountUsage.lastUpdated
+                    lastUpdated: accountUsage.lastUpdated,
+                    isExpanded: isExpanded.wrappedValue   // D2: pass expansion state to header
                 )
             }
         )
@@ -619,18 +617,30 @@ struct AccountDisclosureGroup: View {
 
 }
 
-// MARK: - AccountList (C5/C6): multi-account accordion with ScrollView
+// MARK: - AccountList (C5/C6/D1/D2): multi-account accordion with exclusive expand/collapse
 
 struct AccountList: View {
     let accounts: [AccountUsage]
     let onRemoveAccount: ((String) -> Void)?
+    // D1: lifted accordion state — only one account expanded at a time.
+    // nil means all-collapsed (valid state per ADR-002 D1).
+    @State private var expandedEmail: String?
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(spacing: 0) {
                 ForEach(accounts) { accountUsage in
+                    let email = accountUsage.account.email
+                    // D1: Binding adapter bridges String? state to the Bool that DisclosureGroup needs.
+                    let binding = Binding<Bool>(
+                        get: { expandedEmail == email },
+                        set: { isExpanded in
+                            expandedEmail = isExpanded ? email : nil
+                        }
+                    )
                     AccountDisclosureGroup(
                         accountUsage: accountUsage,
+                        isExpanded: binding,
                         onRemove: accountUsage.isCurrentAccount ? nil : {
                             onRemoveAccount?(accountUsage.account.email)
                         }
@@ -639,7 +649,27 @@ struct AccountList: View {
                 }
             }
         }
-        .frame(maxHeight: 380) // C6: 480pt total minus ~100pt header/footer
+        // D2: computedScrollHeight replaces the hardcoded 380pt cap.
+        // NOTE: These constants (48pt collapsed, 228pt expanded) are shared with
+        // computePopoverHeight() in ClaudeUsageApp.swift. Update both together (RF5).
+        .frame(maxHeight: computedScrollHeight)
+        .onAppear {
+            // D1: Auto-expand the live account when the popover opens.
+            // On popover close+reopen, SwiftUI recreates AccountList and this fires again.
+            expandedEmail = accounts.first(where: { $0.isCurrentAccount })?.account.email
+        }
+    }
+
+    /// Estimated scroll area height assuming 1 expanded row + (N-1) collapsed rows.
+    /// expandedRowHeight ≈ 228pt (48pt header + ~180pt detail)
+    /// collapsedRowHeight = 48pt
+    /// NOTE: Shared constants with computePopoverHeight() in ClaudeUsageApp.swift (RF5).
+    private var computedScrollHeight: CGFloat {
+        let n = CGFloat(accounts.count)
+        let expanded: CGFloat = 228   // matches expandedRowHeight in computePopoverHeight()
+        let collapsed: CGFloat = 48   // matches collapsedRowHeight in computePopoverHeight()
+        let content = expanded + (n - 1) * collapsed
+        return min(content, 380) // 380pt = 480pt cap minus 44pt app header minus 56pt footer area
     }
 }
 
