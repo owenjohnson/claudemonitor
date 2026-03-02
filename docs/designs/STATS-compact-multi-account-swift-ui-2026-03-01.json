@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "stage": "conceptualize",
+  "topic": "compact-multi-account-swift-ui",
+  "date": "2026-03-01",
+  "session": {
+    "teamSize": 6,
+    "modelBreakdown": {
+      "opus": 5,
+      "sonnet": 0,
+      "haiku": 0
+    },
+    "durationMinutes": 45
+  },
+  "decisions": [
+    {
+      "title": "Exclusive accordion via expandedEmail",
+      "summary": "Lift @State var expandedEmail: String? to AccountList, replacing per-row @State isExpanded. DisclosureGroup retained with Binding adapter."
+    },
+    {
+      "title": "48pt compact collapsed rows",
+      "summary": "Reduce AccountHeader from 56pt to 48pt. Hide org name in collapsed state for density."
+    },
+    {
+      "title": "48pt compressed footer (multi-account only)",
+      "summary": "Gear icon for secondary actions (Check for Updates, Launch at Login). Single-account retains full footer."
+    },
+    {
+      "title": "Bottleneck computed tuple on UsageData",
+      "summary": "Centralize highestUtilization logic as var bottleneck: (percentage: Int, category: String) on UsageData."
+    },
+    {
+      "title": "6-file decomposition",
+      "summary": "Extract 718-line UsageView.swift into 6 focused files under 150 lines each."
+    },
+    {
+      "title": "colorForPercentage deduplication",
+      "summary": "Extract duplicated function (lines 264 and 685) to shared utility."
+    }
+  ],
+  "retro": {
+    "detectionChecklist": {
+      "contextLimitHits": false,
+      "agentFailures": false,
+      "scopeDrift": false,
+      "communicationBreakdowns": false,
+      "reviewLoops": false,
+      "zombieAgents": false,
+      "workAbsorption": false
+    },
+    "problemCount": 0,
+    "improvementCount": 2
+  },
+  "conceptualize": {
+    "phasesCompleted": 6,
+    "voteOutcome": "Accept",
+    "rejectionRounds": 0,
+    "editRounds": 0,
+    "smeDomains": [
+      "data-design",
+      "info-arch",
+      "ux",
+      "sys-arch"
+    ],
+    "compositeScore": 78
+  }
+}
