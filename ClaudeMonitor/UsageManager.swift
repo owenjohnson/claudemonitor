@@ -55,7 +55,12 @@ class UsageManager: ObservableObject {
     static let githubRepo = "richhickson/claudecodeusage"
 
     private static let accountsDefaultsKey = "claudeusage.accounts"
-    private static let tokenKeychainService = "ClaudeMonitor-tokens"
+    /// Directory for persisted token storage (file-based, avoids keychain prompts on unsigned builds).
+    private static let appSupportDir: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return base.appendingPathComponent("ClaudeMonitor", isDirectory: true)
+    }()
+    private static let tokensFileURL: URL = appSupportDir.appendingPathComponent("tokens.json")
 
     // Configured URLSession with timeouts
     private lazy var urlSession: URLSession = {
@@ -190,7 +195,7 @@ class UsageManager: ObservableObject {
                 if tokenExpired && !accounts[index].isCurrentAccount {
                     // Evict expired cached token; account becomes truly stale
                     tokenCache.removeValue(forKey: email)
-                    deleteTokenFromKeychain(email: email)
+                    deletePersistedToken(email: email)
                     accounts[index].hasCachedToken = false
                     accounts[index].error = "Token expired — switch to this account to refresh"
                     accounts[index].isLoading = false
@@ -380,62 +385,46 @@ class UsageManager: ObservableObject {
         return accessToken
     }
 
-    // MARK: - Keychain Persistence (token storage)
+    // MARK: - File-based Token Persistence
 
-    /// Save an OAuth token to the app's own keychain, keyed by email.
-    private func saveTokenToKeychain(token: String, email: String) {
-        guard let tokenData = token.data(using: .utf8) else { return }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.tokenKeychainService,
-            kSecAttrAccount as String: email
-        ]
-        let attrs: [String: Any] = [kSecValueData as String: tokenData]
-
-        let status = SecItemUpdate(query as CFDictionary, attrs as CFDictionary)
-        if status == errSecItemNotFound {
-            var addQuery = query
-            addQuery[kSecValueData as String] = tokenData
-            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            SecItemAdd(addQuery as CFDictionary, nil)
+    /// Read the token dictionary from disk. Returns empty dict on missing/corrupt file.
+    private func readTokensFile() -> [String: String] {
+        guard let data = try? Data(contentsOf: Self.tokensFileURL),
+              let dict = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return [:]
         }
+        return dict
     }
 
-    /// Load a persisted token from the app's keychain for a given email.
-    private func loadTokenFromKeychain(email: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.tokenKeychainService,
-            kSecAttrAccount as String: email,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let token = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return token
+    /// Write the token dictionary to disk with owner-only permissions (0600).
+    private func writeTokensFile(_ tokens: [String: String]) {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: Self.appSupportDir, withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(tokens) else { return }
+        fm.createFile(atPath: Self.tokensFileURL.path, contents: data, attributes: [.posixPermissions: 0o600])
     }
 
-    /// Delete a persisted token from the app's keychain for a given email.
-    private func deleteTokenFromKeychain(email: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.tokenKeychainService,
-            kSecAttrAccount as String: email
-        ]
-        SecItemDelete(query as CFDictionary)
+    /// Persist a token for the given email.
+    private func savePersistedToken(token: String, email: String) {
+        var tokens = readTokensFile()
+        tokens[email] = token
+        writeTokensFile(tokens)
     }
 
-    /// Load persisted tokens from keychain into tokenCache for all known accounts.
+    /// Remove a persisted token for the given email.
+    private func deletePersistedToken(email: String) {
+        var tokens = readTokensFile()
+        tokens.removeValue(forKey: email)
+        writeTokensFile(tokens)
+    }
+
+    /// Load persisted tokens from disk into tokenCache for all known accounts.
     /// Called at startup before the first refresh cycle.
     func loadPersistedTokens() {
+        let persisted = readTokensFile()
         let records = loadAccounts()
         for record in records {
-            if let token = loadTokenFromKeychain(email: record.email) {
+            if let token = persisted[record.email] {
                 tokenCache[record.email] = token
             }
         }
@@ -487,7 +476,7 @@ class UsageManager: ObservableObject {
         // Guard: do not remove the live account
         guard accounts.first(where: { $0.account.email == email })?.isCurrentAccount != true else { return }
         tokenCache.removeValue(forKey: email)
-        deleteTokenFromKeychain(email: email)
+        deletePersistedToken(email: email)
         var records = loadAccounts()
         records.removeAll { $0.email == email }
         saveAccounts(records)
@@ -589,7 +578,7 @@ class UsageManager: ObservableObject {
 
         // Cache the token for this account (stays valid even after keychain overwrite)
         tokenCache[profile.email] = token
-        saveTokenToKeychain(token: token, email: profile.email)
+        savePersistedToken(token: token, email: profile.email)
 
         var records = loadAccounts()
         let now = Date()
