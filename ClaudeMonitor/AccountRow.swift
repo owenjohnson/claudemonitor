@@ -11,8 +11,6 @@ struct AccountHeader: View {
     let highestUtilization: Int
     let utilizationColor: Color
     let lastUpdated: Date?
-    let isExpanded: Bool   // D2: controls org name visibility in collapsed state
-
     init(
         email: String,
         organizationName: String?,
@@ -20,8 +18,7 @@ struct AccountHeader: View {
         isActivelyRefreshing: Bool = false,
         highestUtilization: Int,
         utilizationColor: Color,
-        lastUpdated: Date? = nil,
-        isExpanded: Bool = false
+        lastUpdated: Date? = nil
     ) {
         self.email = email
         self.organizationName = organizationName
@@ -30,7 +27,6 @@ struct AccountHeader: View {
         self.highestUtilization = highestUtilization
         self.utilizationColor = utilizationColor
         self.lastUpdated = lastUpdated
-        self.isExpanded = isExpanded
     }
 
     var body: some View {
@@ -40,8 +36,7 @@ struct AccountHeader: View {
                     .font(.headline)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                // D2: org name only shown when row is expanded
-                if isExpanded, let org = organizationName {
+                if let org = organizationName {
                     Text(org)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -75,7 +70,7 @@ struct AccountHeader: View {
         .padding(.vertical, 4)     // D2: reduced from 8pt
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabelText)
-        .accessibilityHint("Press Space to expand usage details")
+        .accessibilityHint("Account usage details")
     }
 
     private var accessibilityLabelText: String {
@@ -98,22 +93,19 @@ struct AccountHeader: View {
     }
 }
 
-// MARK: - AccountDisclosureGroup (C4)
+// MARK: - AccountSection: always-expanded account row with header + detail
 
-struct AccountDisclosureGroup: View {
+struct AccountSection: View {
     let accountUsage: AccountUsage
-    let isExpanded: Binding<Bool>   // D1: lifted state from AccountList
     let onRemove: (() -> Void)?
 
     private var account: AccountRecord { accountUsage.account }
 
-    // Uses bottleneck (D4) as the single source of truth — includes sonnet utilization.
     private var highestUtilization: Int {
         accountUsage.usage?.bottleneck.percentage ?? 0
     }
 
     private var utilizationColor: Color {
-        // Stale accounts (no cached token) render in secondary (muted) color
         guard accountUsage.isCurrentAccount || accountUsage.isActivelyRefreshing else {
             return Color(NSColor.secondaryLabelColor)
         }
@@ -121,22 +113,18 @@ struct AccountDisclosureGroup: View {
     }
 
     var body: some View {
-        DisclosureGroup(
-            isExpanded: isExpanded,
-            content: { accountDetail },
-            label: {
-                AccountHeader(
-                    email: account.email,
-                    organizationName: account.organizationName,
-                    isLive: accountUsage.isCurrentAccount,
-                    isActivelyRefreshing: accountUsage.isActivelyRefreshing,
-                    highestUtilization: highestUtilization,
-                    utilizationColor: utilizationColor,
-                    lastUpdated: accountUsage.lastUpdated,
-                    isExpanded: isExpanded.wrappedValue   // D2: pass expansion state to header
-                )
-            }
-        )
+        VStack(spacing: 0) {
+            AccountHeader(
+                email: account.email,
+                organizationName: account.organizationName,
+                isLive: accountUsage.isCurrentAccount,
+                isActivelyRefreshing: accountUsage.isActivelyRefreshing,
+                highestUtilization: highestUtilization,
+                utilizationColor: utilizationColor,
+                lastUpdated: accountUsage.lastUpdated
+            )
+            accountDetail
+        }
         .contextMenu {
             if !accountUsage.isCurrentAccount, let remove = onRemove {
                 Button(role: .destructive) {
@@ -148,13 +136,7 @@ struct AccountDisclosureGroup: View {
         }
     }
 
-    @ViewBuilder
     private var accountDetail: some View {
-        if accountUsage.isCurrentAccount || accountUsage.isActivelyRefreshing {
-            LiveAccountDetail(accountUsage: accountUsage)
-        } else {
-            StaleAccountDetail(accountUsage: accountUsage)
-        }
+        AccountDetail(accountUsage: accountUsage)
     }
-
 }

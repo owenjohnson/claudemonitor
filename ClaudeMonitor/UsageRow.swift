@@ -17,7 +17,7 @@ struct UsageRow: View {
                 .font(.caption)
                 .foregroundColor(.primary)
 
-            if percentage >= 70, let resetsAt = resetsAt {
+            if let resetsAt = resetsAt {
                 Text(formatTimeRemaining(resetsAt))
                     .font(.caption2)
                     .foregroundColor(.secondary)

@@ -55,6 +55,7 @@ class UsageManager: ObservableObject {
     static let githubRepo = "richhickson/claudecodeusage"
 
     private static let accountsDefaultsKey = "claudeusage.accounts"
+    private static let tokenKeychainService = "ClaudeMonitor-tokens"
 
     // Configured URLSession with timeouts
     private lazy var urlSession: URLSession = {
@@ -90,25 +91,6 @@ class UsageManager: ObservableObject {
     /// Display name for the live account.
     var displayName: String? {
         accounts.first(where: { $0.isCurrentAccount })?.account.displayName
-    }
-
-    /// Worst-case utilization emoji across live and actively-refreshing accounts (stale excluded).
-    /// Uses bottleneck.percentage (D4) — includes sonnet utilization in the comparison.
-    var statusEmoji: String {
-        let activeAccounts = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }
-        guard !activeAccounts.isEmpty else { return "❓" }
-        let maxUtil = activeAccounts.compactMap { $0.usage }.map { $0.bottleneck.percentage }.max() ?? 0
-        if maxUtil >= 90 { return "🔴" }
-        if maxUtil >= 70 { return "🟡" }
-        return "🟢"
-    }
-
-    /// Worst-case utilization percentage across live and actively-refreshing accounts (stale excluded).
-    /// Uses bottleneck.percentage (D4) — includes sonnet utilization in the comparison.
-    var worstCaseUtilization: Int? {
-        let activeAccounts = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }
-        guard !activeAccounts.isEmpty else { return nil }
-        return activeAccounts.compactMap { $0.usage }.map { $0.bottleneck.percentage }.max()
     }
 
     // MARK: - Refresh
@@ -208,6 +190,7 @@ class UsageManager: ObservableObject {
                 if tokenExpired && !accounts[index].isCurrentAccount {
                     // Evict expired cached token; account becomes truly stale
                     tokenCache.removeValue(forKey: email)
+                    deleteTokenFromKeychain(email: email)
                     accounts[index].hasCachedToken = false
                     accounts[index].error = "Token expired — switch to this account to refresh"
                     accounts[index].isLoading = false
@@ -397,6 +380,90 @@ class UsageManager: ObservableObject {
         return accessToken
     }
 
+    // MARK: - Keychain Persistence (token storage)
+
+    /// Save an OAuth token to the app's own keychain, keyed by email.
+    private func saveTokenToKeychain(token: String, email: String) {
+        guard let tokenData = token.data(using: .utf8) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.tokenKeychainService,
+            kSecAttrAccount as String: email
+        ]
+        let attrs: [String: Any] = [kSecValueData as String: tokenData]
+
+        let status = SecItemUpdate(query as CFDictionary, attrs as CFDictionary)
+        if status == errSecItemNotFound {
+            var addQuery = query
+            addQuery[kSecValueData as String] = tokenData
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            SecItemAdd(addQuery as CFDictionary, nil)
+        }
+    }
+
+    /// Load a persisted token from the app's keychain for a given email.
+    private func loadTokenFromKeychain(email: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.tokenKeychainService,
+            kSecAttrAccount as String: email,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let token = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return token
+    }
+
+    /// Delete a persisted token from the app's keychain for a given email.
+    private func deleteTokenFromKeychain(email: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.tokenKeychainService,
+            kSecAttrAccount as String: email
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    /// Load persisted tokens from keychain into tokenCache for all known accounts.
+    /// Called at startup before the first refresh cycle.
+    func loadPersistedTokens() {
+        let records = loadAccounts()
+        for record in records {
+            if let token = loadTokenFromKeychain(email: record.email) {
+                tokenCache[record.email] = token
+            }
+        }
+        // Rebuild accounts array so hasCachedToken flags reflect loaded tokens
+        if let currentEmail = accounts.first(where: { $0.isCurrentAccount })?.account.email {
+            rebuildAccountsFromRecords(currentEmail: currentEmail)
+        } else if !records.isEmpty {
+            // No current account yet (startup); build from records with none marked current
+            var updated: [AccountUsage] = []
+            for record in records {
+                if let existing = accounts.first(where: { $0.account.email == record.email }) {
+                    updated.append(existing)
+                } else {
+                    updated.append(AccountUsage(
+                        account: record,
+                        usage: nil,
+                        error: nil,
+                        isLoading: false,
+                        lastUpdated: nil,
+                        isCurrentAccount: false
+                    ))
+                }
+            }
+            accounts = updated
+            syncCachedTokenFlags()
+        }
+    }
+
     // MARK: - UserDefaults Persistence (A2)
 
     /// Load persisted account records from UserDefaults. Returns empty array on fresh install.
@@ -420,6 +487,7 @@ class UsageManager: ObservableObject {
         // Guard: do not remove the live account
         guard accounts.first(where: { $0.account.email == email })?.isCurrentAccount != true else { return }
         tokenCache.removeValue(forKey: email)
+        deleteTokenFromKeychain(email: email)
         var records = loadAccounts()
         records.removeAll { $0.email == email }
         saveAccounts(records)
@@ -521,6 +589,7 @@ class UsageManager: ObservableObject {
 
         // Cache the token for this account (stays valid even after keychain overwrite)
         tokenCache[profile.email] = token
+        saveTokenToKeychain(token: token, email: profile.email)
 
         var records = loadAccounts()
         let now = Date()

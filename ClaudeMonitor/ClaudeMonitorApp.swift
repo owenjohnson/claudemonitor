@@ -16,6 +16,7 @@ struct ClaudeMonitorApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
+    var hostingController: NSHostingController<UsageView>?
     var usageManager = UsageManager()
     var timer: Timer?
     var cancellables = Set<AnyCancellable>()
@@ -69,6 +70,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func startFetching() {
+        // Seed tokenCache from persisted keychain tokens before first refresh
+        usageManager.loadPersistedTokens()
+
         // Initial fetch and update check
         Task {
             // If system recently booted (within 60 seconds), wait before accessing keychain
@@ -102,10 +106,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func setupPopover() {
+        let hc = NSHostingController(rootView: UsageView(manager: usageManager))
+        hostingController = hc
         popover = NSPopover()
-        popover?.contentSize = NSSize(width: 280, height: computePopoverHeight())
+        popover?.contentSize = measuredPopoverSize()
         popover?.behavior = .transient
-        popover?.contentViewController = NSHostingController(rootView: UsageView(manager: usageManager))
+        popover?.contentViewController = hc
     }
 
     func updateStatusItem() {
@@ -124,10 +130,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if let pct = usageManager.worstCaseUtilization {
-            // Worst-case across live accounts (OQ-3: stale excluded)
+        if let usage = liveAccount.usage {
+            let pct = usage.bottleneck.percentage
             let color: NSColor
-            let symbolName = "circle.fill"
             if pct >= 90 {
                 color = .systemRed
             } else if pct >= 70 {
@@ -135,7 +140,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 color = .systemGreen
             }
-            button.image = statusImage(symbolName: symbolName, color: color)
+            button.image = statusImage(symbolName: "circle.fill", color: color)
             button.title = " \(pct)%"
             button.imagePosition = .imageLeading
         } else if liveAccount.error != nil {
@@ -150,26 +155,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func updatePopoverSize() {
-        popover?.contentSize = NSSize(width: 280, height: computePopoverHeight())
+        popover?.contentSize = measuredPopoverSize()
     }
 
-    private func computePopoverHeight() -> CGFloat {
-        let accounts = usageManager.accounts
-        guard accounts.count > 1 else { return 240 }
-
-        // D3/RF1: Updated for D1 compact rows (20pt) and 48pt compressed footer (D3).
-        // NOTE: collapsedRowHeight and expandedRowHeight are shared constants with
-        // computedScrollHeight in AccountList (UsageView.swift). Update both together (RF5).
-        let collapsedRowHeight: CGFloat = 48  // D2: reduced from 56pt
-        let expandedRowHeight: CGFloat = 140  // D1: compact rows (48pt header + ~16pt DisclosureGroup padding + 3 × 20pt rows + 2 × 8pt spacing)
-        let headerFooter: CGFloat = 92        // 44pt app header + 48pt compressed footer (D3)
-
-        // Assume 1 expanded + (N-1) collapsed rows (conservative formula per RF1).
-        let n = CGFloat(accounts.count)
-        let contentHeight = expandedRowHeight + (n - 1) * collapsedRowHeight
-
-        let total = headerFooter + contentHeight
-        return min(max(total, 200), 480)
+    /// Ask the hosting controller for the real content height at fixed width.
+    private func measuredPopoverSize() -> NSSize {
+        let width: CGFloat = 280
+        let maxHeight: CGFloat = 600
+        guard let hc = hostingController else { return NSSize(width: width, height: 240) }
+        let ideal = hc.sizeThatFits(in: NSSize(width: width, height: maxHeight))
+        let height = min(max(ideal.height, 120), maxHeight)
+        return NSSize(width: width, height: height)
     }
 
     private func statusImage(symbolName: String, color: NSColor) -> NSImage? {
