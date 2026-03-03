@@ -9,9 +9,9 @@ struct UsageData {
     let sonnetUtilization: Double?
     let sonnetResetsAt: Date?
 
-    var sessionPercentage: Int { Int(sessionUtilization) }
-    var weeklyPercentage: Int { Int(weeklyUtilization) }
-    var sonnetPercentage: Int? { sonnetUtilization.map { Int($0) } }
+    var sessionPercentage: Int { Int(sessionUtilization.rounded()) }
+    var weeklyPercentage: Int { Int(weeklyUtilization.rounded()) }
+    var sonnetPercentage: Int? { sonnetUtilization.map { Int($0.rounded()) } }
 
     /// Single source of truth for worst-case utilization across all categories (D4).
     /// Includes sonnet when available — intentional behavioral change per ADR-002 D4.
