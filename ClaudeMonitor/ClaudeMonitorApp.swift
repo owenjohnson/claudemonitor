@@ -2,7 +2,7 @@ import SwiftUI
 import Combine
 
 @main
-struct ClaudeUsageApp: App {
+struct ClaudeMonitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -155,13 +155,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func computePopoverHeight() -> CGFloat {
         let accounts = usageManager.accounts
-        guard accounts.count > 1 else { return 320 }
+        guard accounts.count > 1 else { return 240 }
 
-        // D3/RF1: Updated for 48pt rows (D2) and 48pt compressed footer (D3).
+        // D3/RF1: Updated for D1 compact rows (20pt) and 48pt compressed footer (D3).
         // NOTE: collapsedRowHeight and expandedRowHeight are shared constants with
         // computedScrollHeight in AccountList (UsageView.swift). Update both together (RF5).
         let collapsedRowHeight: CGFloat = 48  // D2: reduced from 56pt
-        let expandedRowHeight: CGFloat = 228  // D2: reduced from 236pt (48pt header + ~180pt detail)
+        let expandedRowHeight: CGFloat = 140  // D1: compact rows (48pt header + ~16pt DisclosureGroup padding + 3 × 20pt rows + 2 × 8pt spacing)
         let headerFooter: CGFloat = 92        // 44pt app header + 48pt compressed footer (D3)
 
         // Assume 1 expanded + (N-1) collapsed rows (conservative formula per RF1).

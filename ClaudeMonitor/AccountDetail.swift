@@ -24,28 +24,25 @@ struct LiveAccountDetail: View {
             } else if let usage = accountUsage.usage {
                 UsageRow(
                     title: "Session",
-                    subtitle: "5-hour window",
                     percentage: usage.sessionPercentage,
                     resetsAt: usage.sessionResetsAt,
                     color: Color.forUtilization(usage.sessionPercentage),
-                    style: .inline
+                    tooltipText: "5-hour rolling window"
                 )
                 UsageRow(
                     title: "Weekly",
-                    subtitle: "7-day window",
                     percentage: usage.weeklyPercentage,
                     resetsAt: usage.weeklyResetsAt,
                     color: Color.forUtilization(usage.weeklyPercentage),
-                    style: .inline
+                    tooltipText: "7-day rolling window"
                 )
                 if let sonnetPct = usage.sonnetPercentage {
                     UsageRow(
                         title: "Sonnet Only",
-                        subtitle: "Model-specific",
                         percentage: sonnetPct,
                         resetsAt: usage.sonnetResetsAt,
                         color: Color.forUtilization(sonnetPct),
-                        style: .inline
+                        tooltipText: "Model-specific limit"
                     )
                 }
             }
@@ -63,28 +60,25 @@ struct StaleAccountDetail: View {
             if let usage = accountUsage.usage {
                 UsageRow(
                     title: "Session",
-                    subtitle: "5-hour window",
                     percentage: usage.sessionPercentage,
                     resetsAt: nil,
                     color: staleColor,
-                    style: .inline
+                    tooltipText: "5-hour rolling window"
                 )
                 UsageRow(
                     title: "Weekly",
-                    subtitle: "7-day window",
                     percentage: usage.weeklyPercentage,
                     resetsAt: nil,
                     color: staleColor,
-                    style: .inline
+                    tooltipText: "7-day rolling window"
                 )
                 if let sonnetPct = usage.sonnetPercentage {
                     UsageRow(
                         title: "Sonnet Only",
-                        subtitle: "Model-specific",
                         percentage: sonnetPct,
                         resetsAt: nil,
                         color: staleColor,
-                        style: .inline
+                        tooltipText: "Model-specific limit"
                     )
                 }
             } else {

@@ -18,7 +18,7 @@ struct UsageView: View {
             HStack {
                 Image(systemName: "chart.bar.fill")
                     .foregroundColor(.accentColor)
-                Text("Claude Usage")
+                Text("Claude Monitor")
                     .font(.headline)
                 Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
                     .font(.caption2)
@@ -52,7 +52,7 @@ struct UsageView: View {
 
             Divider()
 
-            // C5: Conditional layout — single account uses existing layout (pixel-identical to v1.7);
+            // C5: Conditional layout — single account uses single-account compact layout;
             // two or more accounts use the multi-account accordion.
             if manager.accounts.count <= 1 {
                 singleAccountContent()
@@ -72,7 +72,7 @@ struct UsageView: View {
         .frame(width: 280)
     }
 
-    // Single-account content — pixel-identical to v1.7
+    // Single-account content
     @ViewBuilder
     func singleAccountContent() -> some View {
         if let error = manager.error {
@@ -97,33 +97,33 @@ struct UsageView: View {
     
     @ViewBuilder
     func usageContent(_ usage: UsageData) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 8) {
             // Session usage
             UsageRow(
                 title: "Session",
-                subtitle: "5-hour window",
                 percentage: usage.sessionPercentage,
                 resetsAt: usage.sessionResetsAt,
-                color: Color.forUtilization(usage.sessionPercentage)
+                color: Color.forUtilization(usage.sessionPercentage),
+                tooltipText: "5-hour rolling window"
             )
 
             // Weekly usage
             UsageRow(
                 title: "Weekly",
-                subtitle: "7-day window",
                 percentage: usage.weeklyPercentage,
                 resetsAt: usage.weeklyResetsAt,
-                color: Color.forUtilization(usage.weeklyPercentage)
+                color: Color.forUtilization(usage.weeklyPercentage),
+                tooltipText: "7-day rolling window"
             )
 
             // Sonnet only (if available)
             if let sonnetPct = usage.sonnetPercentage {
                 UsageRow(
                     title: "Sonnet Only",
-                    subtitle: "Model-specific",
                     percentage: sonnetPct,
                     resetsAt: usage.sonnetResetsAt,
-                    color: Color.forUtilization(sonnetPct)
+                    color: Color.forUtilization(sonnetPct),
+                    tooltipText: "Model-specific limit"
                 )
             }
         }
@@ -257,7 +257,7 @@ struct UsageView: View {
 
             Divider()
 
-            Text(manager.displayName ?? "Claude Usage")
+            Text(manager.displayName ?? "Claude Monitor")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.bottom, 8)

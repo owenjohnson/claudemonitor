@@ -33,8 +33,8 @@ struct AccountList: View {
             }
         }
         // D2: computedScrollHeight replaces the hardcoded 380pt cap.
-        // NOTE: These constants (48pt collapsed, 228pt expanded) are shared with
-        // computePopoverHeight() in ClaudeUsageApp.swift. Update both together (RF5).
+        // NOTE: These constants (48pt collapsed, 140pt expanded) are shared with
+        // computePopoverHeight() in ClaudeMonitorApp.swift. Update both together (RF5).
         .frame(maxHeight: computedScrollHeight)
         .onAppear {
             // D1: Auto-expand the live account when the popover opens.
@@ -44,12 +44,12 @@ struct AccountList: View {
     }
 
     /// Estimated scroll area height assuming 1 expanded row + (N-1) collapsed rows.
-    /// expandedRowHeight ≈ 228pt (48pt header + ~180pt detail)
+    /// expandedRowHeight ≈ 140pt (48pt header + ~16pt DisclosureGroup padding + 3 × 20pt compact rows + 2 × 8pt spacing)
     /// collapsedRowHeight = 48pt
-    /// NOTE: Shared constants with computePopoverHeight() in ClaudeUsageApp.swift (RF5).
+    /// NOTE: Shared constants with computePopoverHeight() in ClaudeMonitorApp.swift (RF5).
     private var computedScrollHeight: CGFloat {
         let n = CGFloat(accounts.count)
-        let expanded: CGFloat = 228   // matches expandedRowHeight in computePopoverHeight()
+        let expanded: CGFloat = 140   // matches expandedRowHeight in computePopoverHeight()
         let collapsed: CGFloat = 48   // matches collapsedRowHeight in computePopoverHeight()
         let content = expanded + (n - 1) * collapsed
         return min(content, 380) // 380pt = 480pt cap minus 44pt app header minus 48pt compressed footer (D3)
