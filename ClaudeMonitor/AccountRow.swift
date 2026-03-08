@@ -5,7 +5,6 @@ import AppKit
 
 struct AccountHeader: View {
     let email: String
-    let organizationName: String?
     let isLive: Bool
     let isActivelyRefreshing: Bool
     let highestUtilization: Int
@@ -13,7 +12,6 @@ struct AccountHeader: View {
     let lastUpdated: Date?
     init(
         email: String,
-        organizationName: String?,
         isLive: Bool,
         isActivelyRefreshing: Bool = false,
         highestUtilization: Int,
@@ -21,7 +19,6 @@ struct AccountHeader: View {
         lastUpdated: Date? = nil
     ) {
         self.email = email
-        self.organizationName = organizationName
         self.isLive = isLive
         self.isActivelyRefreshing = isActivelyRefreshing
         self.highestUtilization = highestUtilization
@@ -31,19 +28,10 @@ struct AccountHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(email)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let org = organizationName {
-                    Text(org)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
+            Text(email)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
             Spacer()
 
@@ -113,7 +101,6 @@ struct AccountSection: View {
         VStack(spacing: 0) {
             AccountHeader(
                 email: account.email,
-                organizationName: account.organizationName,
                 isLive: accountUsage.hasCachedToken || accountUsage.isCurrentAccount,
                 isActivelyRefreshing: false,
                 highestUtilization: highestUtilization,
