@@ -95,7 +95,7 @@ class UsageManager: ObservableObject {
     private var isRefreshing = false
 
     static let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
-    static let githubRepo = "richhickson/claudecodeusage"
+    static let githubRepo = "owenjohnson/claudemonitor"
 
     private static let accountsDefaultsKey = "claudeusage.accounts"
 

@@ -36,7 +36,7 @@ struct UsageView: View {
             // Update available banner
             if let newVersion = manager.updateAvailable {
                 Button(action: {
-                    openURL(URL(string: "https://github.com/richhickson/claudecodeusage/releases/latest")!)
+                    openURL(URL(string: "https://github.com/owenjohnson/claudemonitor/releases/latest")!)
                 }) {
                     HStack {
                         Image(systemName: "arrow.down.circle.fill")
