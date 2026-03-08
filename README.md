@@ -4,17 +4,18 @@
   <img src="Xnapper-2026-01-09-11.22.53.png" alt="Claude Monitor Screenshot" width="300">
 </p>
 
-A lightweight macOS menubar app that displays your Claude Code usage limits at a glance. 
-<br><Br>
-Built by [@richhickson](https://x.com/richhickson)
+A lightweight macOS menubar app that displays your Claude Code usage limits at a glance.
+
+Originally built by [@richhickson](https://x.com/richhickson). Forked and maintained by [@owenjohnson](https://github.com/owenjohnson).
 
 ## Features
 
-- 🔄 **Auto-refresh** every 2 minutes
-- 🚦 **Color-coded status** - Green (OK), Yellow (>70%), Red (>90%)
+- 🔄 **Auto-refresh** every 60 seconds with retry logic
+- 🚦 **Color-coded status** — Green (OK), Yellow (>70%), Red (>90%)
 - ⏱️ **Time until reset** for both session and weekly limits
 - 📊 **Session & Weekly limits** displayed together
-- 🪶 **Lightweight** - Native Swift, minimal resources
+- 👥 **Multi-account support** — monitor multiple Claude accounts simultaneously
+- 🪶 **Lightweight** — Native Swift, minimal resources
 
 ## Installation
 
@@ -28,8 +29,8 @@ Built by [@richhickson](https://x.com/richhickson)
 ### Build from Source
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/claude-usage.git
-cd claude-usage
+git clone https://github.com/owenjohnson/claudemonitor.git
+cd claudemonitor
 open ClaudeMonitor.xcodeproj
 ```
 
@@ -52,11 +53,11 @@ Then build with ⌘B and run with ⌘R.
    claude
    ```
    
-3. Launch Claude Monitor - it will read your credentials from Keychain automatically
+3. Launch Claude Monitor — it will read your credentials automatically
 
 ## How It Works
 
-Claude Monitor reads your Claude Code OAuth credentials from macOS Keychain and queries the usage API endpoint at `api.anthropic.com/api/oauth/usage`.
+Claude Monitor reads your Claude Code OAuth credentials and queries the usage API endpoint at `api.anthropic.com/api/oauth/usage`. Tokens are persisted locally in `~/.claudemonitor/` for multi-account support.
 
 **Note:** This uses an undocumented API that could change at any time. The app will gracefully handle API changes but may stop working if Anthropic modifies the endpoint.
 
@@ -95,10 +96,21 @@ PRs welcome! Please open an issue first to discuss major changes.
 
 MIT License - do whatever you want with it.
 
+## What's Changed (Fork)
+
+This fork adds the following improvements over the original:
+
+- **Multi-account support** — monitor multiple Claude accounts with an accordion UI
+- **File-based token persistence** — tokens stored in `~/.claudemonitor/` instead of Keychain for reliability
+- **Compact UI redesign** — smaller usage rows, compressed footer, and decomposed view architecture
+- **Concurrent refresh** — all accounts refresh in parallel via TaskGroup
+- **SF Symbol status bar icon** — replaces text-based menubar indicator
+- **Improved polling** — 60-second refresh interval with retry and staleness detection
+
 ## Disclaimer
 
 This is an unofficial tool not affiliated with Anthropic. It uses an undocumented API that may change without notice.
 
 ---
 
-Made by [@richhickson](https://x.com/richhickson)
+Originally created by [@richhickson](https://x.com/richhickson) | Maintained by [@owenjohnson](https://github.com/owenjohnson)
