@@ -1,7 +1,7 @@
-# Claude Usage
+# Claude Monitor
 
 <p align="center">
-  <img src="Xnapper-2026-01-09-11.22.53.png" alt="Claude Usage Screenshot" width="300">
+  <img src="Xnapper-2026-01-09-11.22.53.png" alt="Claude Monitor Screenshot" width="300">
 </p>
 
 A lightweight macOS menubar app that displays your Claude Code usage limits at a glance. 
@@ -21,8 +21,8 @@ Built by [@richhickson](https://x.com/richhickson)
 ### Download
 
 1. Go to [Releases](../../releases)
-2. Download `ClaudeUsage.zip`
-3. Unzip and drag `ClaudeUsage.app` to your Applications folder
+2. Download `ClaudeMonitor.zip`
+3. Unzip and drag `ClaudeMonitor.app` to your Applications folder
 4. Open the app (you may need to right-click → Open the first time)
 
 ### Build from Source
@@ -30,7 +30,7 @@ Built by [@richhickson](https://x.com/richhickson)
 ```bash
 git clone https://github.com/YOUR_USERNAME/claude-usage.git
 cd claude-usage
-open ClaudeUsage.xcodeproj
+open ClaudeMonitor.xcodeproj
 ```
 
 Then build with ⌘B and run with ⌘R.
@@ -52,11 +52,11 @@ Then build with ⌘B and run with ⌘R.
    claude
    ```
    
-3. Launch Claude Usage - it will read your credentials from Keychain automatically
+3. Launch Claude Monitor - it will read your credentials from Keychain automatically
 
 ## How It Works
 
-Claude Usage reads your Claude Code OAuth credentials from macOS Keychain and queries the usage API endpoint at `api.anthropic.com/api/oauth/usage`.
+Claude Monitor reads your Claude Code OAuth credentials from macOS Keychain and queries the usage API endpoint at `api.anthropic.com/api/oauth/usage`.
 
 **Note:** This uses an undocumented API that could change at any time. The app will gracefully handle API changes but may stop working if Anthropic modifies the endpoint.
 

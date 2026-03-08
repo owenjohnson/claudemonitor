@@ -106,9 +106,6 @@ struct AccountSection: View {
     }
 
     private var utilizationColor: Color {
-        guard accountUsage.isCurrentAccount || accountUsage.isActivelyRefreshing else {
-            return Color(NSColor.secondaryLabelColor)
-        }
         return Color.forUtilization(highestUtilization)
     }
 
@@ -117,8 +114,8 @@ struct AccountSection: View {
             AccountHeader(
                 email: account.email,
                 organizationName: account.organizationName,
-                isLive: accountUsage.isCurrentAccount,
-                isActivelyRefreshing: accountUsage.isActivelyRefreshing,
+                isLive: accountUsage.hasCachedToken || accountUsage.isCurrentAccount,
+                isActivelyRefreshing: false,
                 highestUtilization: highestUtilization,
                 utilizationColor: utilizationColor,
                 lastUpdated: accountUsage.lastUpdated

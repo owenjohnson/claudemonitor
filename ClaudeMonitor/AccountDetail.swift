@@ -5,7 +5,7 @@ struct AccountDetail: View {
     let accountUsage: AccountUsage
 
     private var isStale: Bool {
-        !accountUsage.isCurrentAccount && !accountUsage.isActivelyRefreshing
+        !accountUsage.hasCachedToken && !accountUsage.isCurrentAccount
     }
 
     var body: some View {
@@ -71,5 +71,6 @@ struct AccountDetail: View {
             }
         }
         .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 }

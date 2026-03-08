@@ -62,7 +62,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func handleWake() {
-        // Delay refresh after wake to allow keychain to unlock
+        // Brief delay after wake for network reconnection
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
             await usageManager.refresh()
@@ -70,24 +70,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func startFetching() {
-        // Seed tokenCache from persisted keychain tokens before first refresh
-        usageManager.loadPersistedTokens()
+        // Ensure ~/.claudemonitor/ exists
+        usageManager.ensureConfigDir()
 
         // Initial fetch and update check
         Task {
-            // If system recently booted (within 60 seconds), wait before accessing keychain
-            let uptime = ProcessInfo.processInfo.systemUptime
-            if uptime < 60 {
-                let delaySeconds = max(30 - uptime, 5)
-                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-            }
-
             await usageManager.refresh()
             await usageManager.checkForUpdates()
         }
 
-        // Refresh every 60 seconds (B3: reduced from 120s to enable faster account-switch detection)
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        // Refresh every 2 minutes
+        timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.usageManager.refresh()
             }

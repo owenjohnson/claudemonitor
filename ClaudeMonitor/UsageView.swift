@@ -84,15 +84,10 @@ struct UsageView: View {
         }
     }
 
-    // Multi-account accordion content
+    // Multi-account content
     @ViewBuilder
     func multiAccountContent() -> some View {
-        AccountList(
-            accounts: manager.accounts,
-            onRemoveAccount: { email in
-                manager.removeAccount(email: email)
-            }
-        )
+        AccountList(accounts: manager.accounts)
     }
     
     @ViewBuilder
@@ -133,35 +128,34 @@ struct UsageView: View {
     @ViewBuilder
     func errorView(_ error: String) -> some View {
         VStack(spacing: 12) {
-            if error.contains("Not logged in") {
-                Image(systemName: "person.crop.circle.badge.questionmark")
+            if error.contains("No OAuth tokens") {
+                Image(systemName: "key.fill")
                     .font(.largeTitle)
                     .foregroundColor(.blue)
 
-                Text("Not Signed In")
+                Text("No Tokens Configured")
                     .font(.headline)
 
-                Text("This app uses credentials from Claude Code stored in the macOS Keychain.")
+                Text("Add your OAuth tokens to:")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
 
-                Text("Please run `claude` in Terminal and log in first.")
-                    .font(.subheadline)
+                Text(manager.tokenFilePath())
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.primary)
+                    .textSelection(.enabled)
+
+                Text("Format: [\"token1\", \"token2\"]")
+                    .font(.system(.caption2, design: .monospaced))
                     .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
 
-                Button("Open Terminal & Run Claude") {
-                    launchClaudeCLI()
+                Button("Reveal in Finder") {
+                    let dir = FileManager.default.homeDirectoryForCurrentUser
+                        .appendingPathComponent(".claudemonitor")
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir.path)
                 }
                 .buttonStyle(.borderedProminent)
                 .padding(.top, 4)
-
-                Button("Install Claude Code") {
-                    openURL(URL(string: "https://docs.anthropic.com/en/docs/claude-code/overview")!)
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
             } else {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.largeTitle)
@@ -339,18 +333,6 @@ struct UsageView: View {
         .background(Color(NSColor.controlBackgroundColor))
     }
 
-    func launchClaudeCLI() {
-        let script = """
-        tell application "Terminal"
-            activate
-            do script "claude"
-        end tell
-        """
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-        }
-    }
 }
 
 #Preview {
