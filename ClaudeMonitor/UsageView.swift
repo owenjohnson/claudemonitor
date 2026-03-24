@@ -72,13 +72,21 @@ struct UsageView: View {
         .frame(width: 280)
     }
 
-    // Single-account content
+    // Single-account content — show cached usage even when there's an error,
+    // so reset times remain visible (e.g. after a network failure or 429 without headers).
     @ViewBuilder
     func singleAccountContent() -> some View {
-        if let error = manager.error {
-            errorView(error)
-        } else if let usage = manager.usage {
+        if let usage = manager.usage {
             usageContent(usage)
+            if let error = manager.error {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+            }
+        } else if let error = manager.error {
+            errorView(error)
         } else {
             loadingView()
         }

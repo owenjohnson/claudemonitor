@@ -19,12 +19,6 @@ struct AccountDetail: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
-            } else if let error = accountUsage.error {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .padding(.vertical, 8)
             } else if let usage = accountUsage.usage {
                 let color = isStale ? Color(NSColor.secondaryLabelColor) : Color.forUtilization(usage.sessionPercentage)
                 let weeklyColor = isStale ? Color(NSColor.secondaryLabelColor) : Color.forUtilization(usage.weeklyPercentage)
@@ -54,6 +48,13 @@ struct AccountDetail: View {
                     )
                 }
 
+                if let error = accountUsage.error {
+                    Text(error)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 2)
+                }
+
                 if isStale, let updated = accountUsage.lastUpdated {
                     HStack {
                         Text("Updated \(updated.formatted(.relative(presentation: .named)))")
@@ -63,6 +64,12 @@ struct AccountDetail: View {
                     }
                     .padding(.top, 4)
                 }
+            } else if let error = accountUsage.error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .padding(.vertical, 8)
             } else if isStale {
                 Text("No usage data available for this account.")
                     .font(.caption)

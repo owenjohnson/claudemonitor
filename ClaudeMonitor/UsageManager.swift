@@ -387,12 +387,9 @@ class UsageManager: ObservableObject {
             throw UsageError.invalidResponse
         }
 
-        guard httpResponse.statusCode == 200 else {
-            let responseBody = String(data: data, encoding: .utf8) ?? ""
-            throw UsageError.apiError(statusCode: httpResponse.statusCode, body: responseBody)
-        }
-
-        // Parse usage from response headers
+        // Parse rate-limit headers from any response — they're present on 429s too.
+        // When a key hits 100% usage the API returns 429, but the headers still carry
+        // the utilization fractions and reset timestamps we need.
         let headers = httpResponse.allHeaderFields
 
         // Headers return 0.0-1.0 fractions; convert to 0-100 percentages
@@ -404,14 +401,27 @@ class UsageManager: ObservableObject {
         let weeklyReset = headerEpochDate(headers, "anthropic-ratelimit-unified-7d-reset")
         let sonnetReset = headerEpochDate(headers, "anthropic-ratelimit-unified-7d_sonnet-reset")
 
-        return UsageData(
-            sessionUtilization: sessionUtil ?? 0,
-            sessionResetsAt: sessionReset,
-            weeklyUtilization: weeklyUtil ?? 0,
-            weeklyResetsAt: weeklyReset,
-            sonnetUtilization: sonnetUtil,
-            sonnetResetsAt: sonnetReset
-        )
+        // Return usage data from 200 responses, or from 429s that include rate-limit headers.
+        // At 100% utilization the API returns 429, but the headers still have everything we need.
+        if httpResponse.statusCode == 200
+            || (httpResponse.statusCode == 429 && (sessionUtil != nil || weeklyUtil != nil))
+        {
+            if httpResponse.statusCode == 429 {
+                FileLogger.log("Got usage data from 429 response (rate limited)")
+            }
+            return UsageData(
+                sessionUtilization: sessionUtil ?? 0,
+                sessionResetsAt: sessionReset,
+                weeklyUtilization: weeklyUtil ?? 0,
+                weeklyResetsAt: weeklyReset,
+                sonnetUtilization: sonnetUtil,
+                sonnetResetsAt: sonnetReset
+            )
+        }
+
+        // Any other non-200 status (401, 500, 429 without headers, etc.)
+        let responseBody = String(data: data, encoding: .utf8) ?? ""
+        throw UsageError.apiError(statusCode: httpResponse.statusCode, body: responseBody)
     }
 
     /// Parse a Double from a response header value.
