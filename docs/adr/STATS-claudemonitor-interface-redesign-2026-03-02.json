@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "stage": "architect",
+  "topic": "claudemonitor-interface-redesign",
+  "date": "2026-03-02",
+  "sessionInfo": {
+    "agents": 6,
+    "agentList": [
+      {"name": "adr-architect", "model": "claude-opus-4-6", "role": "designer"},
+      {"name": "tech-analyst", "model": "claude-opus-4-6", "role": "analyst"},
+      {"name": "adr-writer", "model": "claude-sonnet-4-6", "role": "writer"},
+      {"name": "adr-reviewer-1", "model": "claude-opus-4-6", "role": "reviewer"},
+      {"name": "adr-reviewer-2", "model": "claude-opus-4-6", "role": "reviewer"},
+      {"name": "clerk", "model": "claude-haiku-4-5-20251001", "role": "observer"}
+    ],
+    "modelBreakdown": {
+      "opus": 4,
+      "sonnet": 1,
+      "haiku": 1
+    }
+  },
+  "adrFile": "docs/adr/ADR-003-compact-usage-row-and-keychain-migration.md",
+  "reviewIterations": 2,
+  "reviewHistory": [
+    {
+      "iteration": 1,
+      "reviewer": "adr-reviewer-1",
+      "score": 82,
+      "recommendation": "Revise",
+      "findings": {
+        "critical": 0,
+        "high": 3,
+        "medium": 4,
+        "low": 0
+      },
+      "findingDetails": [
+        "H1: D3 height arithmetic inconsistency (108pt stated vs. 140pt computed)",
+        "H2: D4 async-to-sync caller cascade underspecified",
+        "H3: D3 does not account for conditional sonnet row (2 vs. 3 rows)",
+        "M1: D4 must retain missingOAuthToken diagnostic",
+        "M2: D2 precision note supersession should mention D1 progress bar removal",
+        "M3: D1 timer threshold should explicitly reference Color.forUtilization()",
+        "M4: Title should be imperative form"
+      ]
+    },
+    {
+      "iteration": 2,
+      "reviewer": "adr-reviewer-2",
+      "score": 92,
+      "recommendation": "Accept",
+      "findings": {
+        "critical": 0,
+        "high": 0,
+        "medium": 1,
+        "low": 4
+      },
+      "findingDetails": [
+        "M2 (LOW): D1 code sample omits formatTimeRemaining declaration",
+        "L1: Line number discrepancy (46-47 vs 45-47)",
+        "L2: isRetryable switch not mentioned in affected files",
+        "L3: App header 44pt is an estimate without explicit frame constraint",
+        "L4: Prior ADRs should be annotated as partially superseded"
+      ],
+      "note": "All iteration 1 findings (3H+4M) verified as resolved"
+    }
+  ],
+  "finalScore": 92,
+  "finalRecommendation": "Accept",
+  "decisionsCount": 4,
+  "decisions": [
+    {
+      "id": "D1",
+      "title": "CompactUsageRow layout",
+      "description": "20pt single-line layout replacing card-style UsageRow at all 9 call sites"
+    },
+    {
+      "id": "D2",
+      "title": "Int truncation bug fix",
+      "description": "Int(value.rounded()) replaces Int(value) for percentage rounding precision"
+    },
+    {
+      "id": "D3",
+      "title": "Height constant updates",
+      "description": "expandedRowHeight updated from 228pt to ~140pt accounting for DisclosureGroup padding"
+    },
+    {
+      "id": "D4",
+      "title": "Keychain migration to SecItemCopyMatching",
+      "description": "Migrate from security CLI to SecItemCopyMatching for OAuth token access"
+    }
+  ],
+  "findingCounts": {
+    "iteration1": {
+      "critical": 0,
+      "high": 3,
+      "medium": 4,
+      "low": 0,
+      "total": 7
+    },
+    "iteration2": {
+      "critical": 0,
+      "high": 0,
+      "medium": 1,
+      "low": 4,
+      "total": 5
+    }
+  },
+  "agentContributions": {
+    "adr-architect": "Phase 1 scope analysis, revision instruction synthesis, final assessment delivery",
+    "tech-analyst": "Feasibility assessment, call-site mapping (9 locations), risk analysis (8 risks), recommendation for Option C (compact everywhere)",
+    "adr-writer": "ADR-003 draft authoring, revision execution after iteration 1 feedback",
+    "adr-reviewer-1": "Iteration 1 comprehensive review, identified 3H+4M findings",
+    "adr-reviewer-2": "Iteration 2 verification review, confirmed all fixes, approved at 92/100",
+    "clerk": "Process recording across all phases"
+  },
+  "constraintChanges": {
+    "removed": [
+      "single-account pixel-identity promise",
+      "zero-dependency constraint",
+      "CLI keychain approach constraint"
+    ],
+    "added": [
+      "keychain migration to SecItemCopyMatching (D4)"
+    ]
+  },
+  "scopeEvolution": {
+    "phase1": "3 decisions (D1, D2, D3)",
+    "phase2": "4 decisions (D1, D2, D3, D4 added)"
+  },
+  "implementationOrder": ["D2", "D4", "D1", "D3"],
+  "processIssuesDetected": false,
+  "issuesLog": {
+    "contextLimitHits": 0,
+    "agentFailures": 0,
+    "communicationBreakdowns": 0,
+    "scopeDrift": false,
+    "zombieAgents": 0,
+    "workAbsorption": false
+  },
+  "keyConflictsAndResolutions": [
+    {
+      "conflict": "Tech analyst flagged RF-A (single-account pixel-identity ambiguity)",
+      "resolution": "User explicitly removed pixel-identity constraint, scope expanded to include D4"
+    },
+    {
+      "conflict": "D3 height constant estimated at 108pt",
+      "resolution": "Reviewer-1 identified discrepancy, corrected to ~140pt accounting for DisclosureGroup padding in revision"
+    }
+  ]
+}

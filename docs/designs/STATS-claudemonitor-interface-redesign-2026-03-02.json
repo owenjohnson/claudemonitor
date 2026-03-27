@@ -1,0 +1,171 @@
+{
+  "pipeline": "claudemonitor-interface-redesign",
+  "stage": "conceptualize",
+  "date": "2026-03-02",
+  "crystal_id": "c19ca9fe-9a91-4e31-bc14-0fa84f79f1cc",
+  "status": "complete",
+  "recommendation": "IMPLEMENT",
+  "user_decision": "ACCEPT",
+  "phase_summary": {
+    "total_phases": 6,
+    "completed": 6,
+    "skipped": 0
+  },
+  "sme_teams": [
+    {
+      "domain": "Data Design",
+      "phase_scores": [
+        {"phase": 1, "confidence": 4},
+        {"phase": 2, "confidence": 8},
+        {"phase": 3, "confidence": 8},
+        {"phase": 4, "confidence": 8},
+        {"phase": 5, "confidence": 9},
+        {"phase": 6, "confidence": 9}
+      ],
+      "final_confidence": 9,
+      "vote": "ACCEPT"
+    },
+    {
+      "domain": "Information Architecture",
+      "phase_scores": [
+        {"phase": 1, "confidence": 5},
+        {"phase": 2, "confidence": 7},
+        {"phase": 3, "confidence": 7},
+        {"phase": 4, "confidence": 8},
+        {"phase": 5, "confidence": 8},
+        {"phase": 6, "confidence": 9}
+      ],
+      "final_confidence": 9,
+      "vote": "ACCEPT"
+    },
+    {
+      "domain": "User Experience",
+      "phase_scores": [
+        {"phase": 1, "confidence": 6},
+        {"phase": 2, "confidence": 8},
+        {"phase": 3, "confidence": 8},
+        {"phase": 4, "confidence": 9},
+        {"phase": 5, "confidence": 8},
+        {"phase": 6, "confidence": 8}
+      ],
+      "final_confidence": 8,
+      "vote": "ACCEPT"
+    },
+    {
+      "domain": "System Architecture",
+      "phase_scores": [
+        {"phase": 1, "confidence": 6},
+        {"phase": 2, "confidence": 8},
+        {"phase": 3, "confidence": 8},
+        {"phase": 4, "confidence": 9},
+        {"phase": 5, "confidence": 9},
+        {"phase": 6, "confidence": 9}
+      ],
+      "final_confidence": 9,
+      "vote": "ACCEPT"
+    }
+  ],
+  "final_vote": {
+    "unanimous": true,
+    "accept_count": 4,
+    "reject_count": 0,
+    "composite_confidence": 8.75
+  },
+  "key_findings": [
+    "Compact redesign confirmed as NEW WORK (not previously shipped)",
+    "API returns 3 categories (five_hour, seven_day, sonnet_only), not 6",
+    "Progress bars killed (redundant with colored percentages)",
+    "Summary Strip killed (countdown moves to collapsed header)",
+    "Int truncation bug confirmed and included in scope",
+    "Compact Inline Rows 20pt/row as final design",
+    "44-54% height savings per expanded section (228pt → 120-148pt)",
+    "Zero new types required; view-only redesign"
+  ],
+  "scope_changes": {
+    "killed": [
+      "Progress bars (all SMEs agreed)",
+      "Summary Strip layout (countdown deferred to header)",
+      "4-way UsageManager decomposition (over-engineering)",
+      "@Observable migration (risk > benefit)",
+      "4th urgency tier (scope reduction)",
+      "Animations and hysteresis (scope reduction)",
+      "Subtitle labels (redundant after first use)"
+    ],
+    "deferred": [
+      "WKWebView OAuth (v3.0)",
+      "Collapsed header countdown (follow-up PR)",
+      "Decodable migration (follow-up PR)"
+    ],
+    "included": [
+      "Int truncation fix (3 lines)",
+      "Reduce Motion support (3 lines)",
+      "Refresh Now button (5 lines)"
+    ]
+  },
+  "implementation_spec": {
+    "component": "CompactUsageRow",
+    "row_height": 20,
+    "layout": "HStack [Label .caption] [Timer if ≥70%] [Spacer] [Percentage .caption .bold colored]",
+    "expanded_height_range": "120-148pt",
+    "reduction_from_baseline": "47-55%",
+    "baseline_height": 228,
+    "files_changed": 8,
+    "lines_changed": "~120",
+    "new_types": 0,
+    "steps": 9
+  },
+  "synthesis_artifacts": [
+    "90a47a36-3a77-4643-980f-441b51a4131e",
+    "ef56dee8-a77e-4e06-b23c-b5102e31993c",
+    "22b1419f-128b-4b16-8923-85a81cab8c4a"
+  ],
+  "user_input": [
+    {
+      "phase": 3,
+      "constraint": "We need a fundamental redesign for the individual token usage sections. They don't need to be as big as they are."
+    },
+    {
+      "phase": 2,
+      "note": "I don't care about ToS as long as the tool works. I am not deploying this at scale - it is a personal tool."
+    },
+    {
+      "phase": 4,
+      "decision": "Continue"
+    },
+    {
+      "phase": 6,
+      "vote": "ACCEPT"
+    }
+  ],
+  "team_composition": {
+    "sme_domains": 4,
+    "agents_per_phase": 7,
+    "breakdown": {
+      "data_design_sme": 1,
+      "info_arch_sme": 1,
+      "ux_sme": 1,
+      "sys_arch_sme": 1,
+      "synthesis_expert": 1,
+      "clerk": 1,
+      "monitor": 1
+    },
+    "model_profile": "adaptive",
+    "sme_model": "claude-opus-4-6",
+    "synthesis_model": "claude-opus-4-6",
+    "clerk_model": "claude-haiku-4-5-20251001",
+    "monitor_model": "claude-haiku-4-5-20251001"
+  },
+  "metrics": {
+    "unique_approaches_cataloged_p1": 54,
+    "critical_bugs_found": 1,
+    "data_bugs_found": 2,
+    "confirmed_bugs_in_scope": 1,
+    "debunked_issues": 1,
+    "layout_approaches_evaluated": 10,
+    "open_questions_p3": 7,
+    "phase_3_production_readiness": 7,
+    "confidence_improvement_p1_p6_avg": 3.5,
+    "context_resets": 2,
+    "sme_retries_required": 3
+  }
+}
