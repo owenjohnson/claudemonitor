@@ -1,0 +1,348 @@
+import SwiftUI
+import AppKit
+import ServiceManagement
+
+struct UsageView: View {
+    @ObservedObject var manager: UsageManager
+    @Environment(\.openURL) var openURL
+    @State private var launchAtLogin: Bool = {
+        if #available(macOS 13.0, *) {
+            return SMAppService.mainApp.status == .enabled
+        }
+        return false
+    }()
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Image(systemName: "chart.bar.fill")
+                    .foregroundColor(.accentColor)
+                Text("Claude Monitor")
+                    .font(.headline)
+                Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Spacer()
+
+                if manager.isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                }
+            }
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor))
+
+            // Update available banner
+            if let newVersion = manager.updateAvailable {
+                Button(action: {
+                    openURL(URL(string: "https://github.com/owenjohnson/claudemonitor/releases/latest")!)
+                }) {
+                    HStack {
+                        Image(systemName: "arrow.down.circle.fill")
+                        Text("Update Available: v\(newVersion)")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
+
+            Divider()
+
+            // C5: Conditional layout — single account uses single-account compact layout;
+            // two or more accounts use the multi-account accordion.
+            if manager.accounts.count <= 1 {
+                singleAccountContent()
+            } else {
+                multiAccountContent()
+            }
+
+            Divider()
+
+            // Footer: compressed (gear menu) for multi-account, full for single-account (D3)
+            if manager.accounts.count > 1 {
+                compressedFooterView()
+            } else {
+                footerView()
+            }
+        }
+        .frame(width: 280)
+    }
+
+    // Single-account content — show cached usage even when there's an error,
+    // so reset times remain visible (e.g. after a network failure or 429 without headers).
+    @ViewBuilder
+    func singleAccountContent() -> some View {
+        if let usage = manager.usage {
+            usageContent(usage)
+            if let error = manager.error {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+            }
+        } else if let error = manager.error {
+            errorView(error)
+        } else {
+            loadingView()
+        }
+    }
+
+    // Multi-account content
+    @ViewBuilder
+    func multiAccountContent() -> some View {
+        AccountList(accounts: manager.accounts)
+    }
+    
+    @ViewBuilder
+    func usageContent(_ usage: UsageData) -> some View {
+        VStack(spacing: 8) {
+            // Session usage
+            UsageRow(
+                title: "Session",
+                percentage: usage.sessionPercentage,
+                resetsAt: usage.sessionResetsAt,
+                color: Color.forUtilization(usage.sessionPercentage),
+                tooltipText: "5-hour rolling window"
+            )
+
+            // Weekly usage
+            UsageRow(
+                title: "Weekly",
+                percentage: usage.weeklyPercentage,
+                resetsAt: usage.weeklyResetsAt,
+                color: Color.forUtilization(usage.weeklyPercentage),
+                tooltipText: "7-day rolling window"
+            )
+
+            // Sonnet only (if available)
+            if let sonnetPct = usage.sonnetPercentage {
+                UsageRow(
+                    title: "Sonnet Only",
+                    percentage: sonnetPct,
+                    resetsAt: usage.sonnetResetsAt,
+                    color: Color.forUtilization(sonnetPct),
+                    tooltipText: "Model-specific limit"
+                )
+            }
+        }
+        .padding()
+    }
+    
+    @ViewBuilder
+    func errorView(_ error: String) -> some View {
+        VStack(spacing: 12) {
+            if error.contains("No OAuth tokens") {
+                Image(systemName: "key.fill")
+                    .font(.largeTitle)
+                    .foregroundColor(.blue)
+
+                Text("No Tokens Configured")
+                    .font(.headline)
+
+                Text("Add your OAuth tokens to:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text(manager.tokenFilePath())
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.primary)
+                    .textSelection(.enabled)
+
+                Text("Format: [\"token1\", \"token2\"]")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.secondary)
+
+                Button("Reveal in Finder") {
+                    let dir = FileManager.default.homeDirectoryForCurrentUser
+                        .appendingPathComponent(".claudemonitor")
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir.path)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            } else {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.largeTitle)
+                    .foregroundColor(.orange)
+
+                Text(error)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+    }
+    
+    @ViewBuilder
+    func loadingView() -> some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Loading usage data...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+    }
+    
+    @ViewBuilder
+    func footerView() -> some View {
+        VStack(spacing: 8) {
+            Button(action: {
+                Task { await manager.checkForUpdates() }
+            }) {
+                HStack {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("Check for Updates")
+                }
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+            .padding(.top, 8)
+
+            Toggle("Launch at Login", isOn: $launchAtLogin)
+                .toggleStyle(.checkbox)
+                .font(.caption)
+                .onChange(of: launchAtLogin) { newValue in
+                    do {
+                        if newValue {
+                            try SMAppService.mainApp.register()
+                        } else {
+                            try SMAppService.mainApp.unregister()
+                        }
+                    } catch {
+                        launchAtLogin = !newValue
+                    }
+                }
+                .padding(.horizontal)
+
+            Divider()
+
+            HStack {
+                if let lastUpdated = manager.lastUpdated {
+                    Text("Updated \(lastUpdated.formatted(.relative(presentation: .named)))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button(action: {
+                    Task { await manager.refresh() }
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(manager.isLoading)
+
+                Button(action: {
+                    openURL(URL(string: "https://claude.ai")!)
+                }) {
+                    Image(systemName: "globe")
+                }
+                .buttonStyle(.borderless)
+
+                Button(action: {
+                    NSApplication.shared.terminate(nil)
+                }) {
+                    Image(systemName: "xmark.circle")
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding(.horizontal)
+
+            Divider()
+
+            Text(manager.displayName ?? "Claude Monitor")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+        }
+        .background(Color(NSColor.controlBackgroundColor))
+    }
+    
+    // D3: 48pt compressed footer for multi-account mode.
+    // CRITICAL (R6/RF1): Must include the .onChange(of: launchAtLogin) handler for SMAppService.
+    // The ADR-002 D3 code sample omits it — this implementation adds it verbatim from footerView().
+    @ViewBuilder
+    func compressedFooterView() -> some View {
+        HStack(spacing: 8) {
+            if let lastUpdated = manager.lastUpdated {
+                Text("Updated \(lastUpdated.formatted(.relative(presentation: .named)))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            // Gear menu: Check for Updates + Launch at Login
+            Menu {
+                Button(action: {
+                    Task { await manager.checkForUpdates() }
+                }) {
+                    Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
+                }
+
+                Divider()
+
+                // RF3: Toggle inside SwiftUI.Menu — .onChange may not fire on all macOS versions.
+                // If it stops firing, replace with a Button that calls
+                // SMAppService.mainApp.register() / .unregister() directly.
+                Toggle("Launch at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { newValue in
+                        do {
+                            if newValue {
+                                try SMAppService.mainApp.register()
+                            } else {
+                                try SMAppService.mainApp.unregister()
+                            }
+                        } catch {
+                            launchAtLogin = !newValue
+                        }
+                    }
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Button(action: {
+                Task { await manager.refresh() }
+            }) {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .disabled(manager.isLoading)
+
+            Button(action: {
+                openURL(URL(string: "https://claude.ai")!)
+            }) {
+                Image(systemName: "globe")
+            }
+            .buttonStyle(.borderless)
+
+            Button(action: {
+                NSApplication.shared.terminate(nil)
+            }) {
+                Image(systemName: "xmark.circle")
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(height: 48)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
+
+}
+
+#Preview {
+    UsageView(manager: UsageManager())
+}

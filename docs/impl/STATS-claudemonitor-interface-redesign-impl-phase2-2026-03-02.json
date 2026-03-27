@@ -1,0 +1,155 @@
+{
+  "phase": "2+3",
+  "title": "Compact Row Layout (D1) + Height Constants (D3)",
+  "date": "2026-03-02",
+  "commit": "a83afe7",
+  "duration_hours": 0.5,
+  "team": {
+    "engineer": 1,
+    "architect": 1,
+    "judges": 2,
+    "reviewers": 10,
+    "clerk": 1,
+    "total": 15
+  },
+  "waves": {
+    "total": 1,
+    "completed": 1,
+    "review_iterations": 1
+  },
+  "tasks": {
+    "2.1": {
+      "name": "Rewrite UsageRow.swift to compact 20pt HStack",
+      "status": "COMPLETE",
+      "lines_before": 84,
+      "lines_after": 54,
+      "removals": [
+        "UsageRowStyle enum",
+        "subtitle parameter",
+        "style parameter",
+        "progress bar view",
+        "card background"
+      ]
+    },
+    "2.2": {
+      "name": "Update all 9 call sites",
+      "status": "COMPLETE",
+      "call_sites": 9,
+      "files": [
+        "AccountDetail.swift",
+        "UsageView.swift"
+      ],
+      "updates_per_file": {
+        "AccountDetail.swift": 6,
+        "UsageView.swift": 3
+      },
+      "changes": [
+        "Remove subtitle: parameter",
+        "Remove style: parameter",
+        "Update VStack spacing to 8pt"
+      ]
+    },
+    "3.1": {
+      "name": "Update height constants",
+      "status": "COMPLETE",
+      "constants": [
+        {
+          "name": "expanded height",
+          "before": 228,
+          "after": 140,
+          "files": [
+            "AccountList.swift",
+            "ClaudeMonitorApp.swift"
+          ]
+        },
+        {
+          "name": "single-account height",
+          "before": 320,
+          "after": 240,
+          "files": [
+            "AccountList.swift",
+            "ClaudeMonitorApp.swift"
+          ]
+        }
+      ]
+    }
+  },
+  "files_modified": [
+    "UsageRow.swift",
+    "AccountDetail.swift",
+    "UsageView.swift",
+    "AccountList.swift",
+    "ClaudeMonitorApp.swift"
+  ],
+  "build": {
+    "status": "SUCCEEDED",
+    "errors": 0,
+    "warnings": 0
+  },
+  "validation": {
+    "dead_code_removal": {
+      "UsageRowStyle": "CLEAN",
+      "subtitle_parameter": "CLEAN",
+      "progress_bar": "CLEAN",
+      "card_background": "CLEAN",
+      "pixel_identical": "CLEAN"
+    },
+    "accessibility": {
+      "preserved": true,
+      "enhancements": [
+        "tooltipText (RF3) pragmatic addition"
+      ]
+    },
+    "spacing_consistency": {
+      "status": "VERIFIED",
+      "vstack_spacing_pt": 8
+    }
+  },
+  "review": {
+    "dimensions_reviewed": 10,
+    "dimensions_approved": 10,
+    "approval_rate": "100%",
+    "findings": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 2
+    },
+    "low_findings": [
+      {
+        "id": 1,
+        "file": "UsageRow.swift",
+        "line": 35,
+        "description": "Empty string tooltip fallback may flash blank tooltip",
+        "blocking": false
+      },
+      {
+        "id": 2,
+        "file": "UsageRow.swift",
+        "line": "10-12",
+        "description": "accessibilityValueText missing reset time (not a regression)",
+        "blocking": false
+      }
+    ]
+  },
+  "quorum_votes": {
+    "impl_architect_correctness": "ACCEPT",
+    "arch_pragmatism_pragmatism": "ACCEPT",
+    "arch_design_architecture": "ACCEPT",
+    "required_for_approval": 2,
+    "received": 3,
+    "result": "UNANIMOUS APPROVAL"
+  },
+  "adr_compliance": {
+    "ADR_003_D1": "FULL",
+    "ADR_003_D3": "FULL"
+  },
+  "risk_assessment": {
+    "R4_height_atomicity": "PASS",
+    "R5_accessibility": "PASS",
+    "spacing_consistency": "PASS",
+    "RF4_single_account_height": "LOW_RISK"
+  },
+  "outcome": "SHIPPABLE",
+  "ready_for_commit": true
+}

@@ -2,19 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClaudeUsage",
+    name: "ClaudeMonitor",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "ClaudeUsage", targets: ["ClaudeUsage"])
+        .executable(name: "ClaudeMonitor", targets: ["ClaudeMonitor"])
     ],
     dependencies: [],
     targets: [
         .executableTarget(
-            name: "ClaudeUsage",
+            name: "ClaudeMonitor",
             dependencies: [],
-            path: "ClaudeUsage"
+            path: "ClaudeMonitor"
         )
     ]
 )

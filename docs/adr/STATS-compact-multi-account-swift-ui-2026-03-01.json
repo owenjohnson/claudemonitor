@@ -1,0 +1,183 @@
+{
+  "pipeline": {
+    "topic": "compact-multi-account-swift-ui",
+    "date": "2026-03-01",
+    "status": "complete"
+  },
+  "team": {
+    "total_agents": 6,
+    "by_role": {
+      "architect": 1,
+      "analyst": 1,
+      "writer": 1,
+      "reviewer": 1,
+      "clerk": 1,
+      "monitor": 1
+    },
+    "by_model": {
+      "opus": 3,
+      "sonnet": 1,
+      "haiku": 2
+    },
+    "agents": [
+      {
+        "name": "adr-architect",
+        "role": "architect",
+        "model": "opus",
+        "phase": "1-3"
+      },
+      {
+        "name": "tech-analyst",
+        "role": "analyst",
+        "model": "opus",
+        "phase": "1"
+      },
+      {
+        "name": "adr-writer",
+        "role": "writer",
+        "model": "sonnet",
+        "phase": "2"
+      },
+      {
+        "name": "adr-reviewer-1",
+        "role": "reviewer",
+        "model": "opus",
+        "phase": "3"
+      },
+      {
+        "name": "clerk",
+        "role": "clerk",
+        "model": "haiku",
+        "phase": "all"
+      },
+      {
+        "name": "monitor",
+        "role": "monitor",
+        "model": "haiku",
+        "phase": "all"
+      }
+    ]
+  },
+  "phases": {
+    "phase_1_analysis": {
+      "name": "Analysis",
+      "status": "complete",
+      "contributors": [
+        "adr-architect",
+        "tech-analyst"
+      ],
+      "outputs": {
+        "adr_scope": "Single ADR-002",
+        "decisions_count": 6,
+        "feasibility": "all_confirmed",
+        "risks_identified": 8,
+        "red_flags": 5
+      }
+    },
+    "phase_2_design": {
+      "name": "Design/Write",
+      "status": "complete",
+      "contributors": [
+        "adr-writer",
+        "adr-architect"
+      ],
+      "outputs": {
+        "adr_file": "docs/adr/ADR-002-compact-multi-account-ui.md",
+        "line_count_initial": 491,
+        "line_count_final": 513,
+        "readme_updated": true
+      }
+    },
+    "phase_3_review": {
+      "name": "Review",
+      "status": "complete",
+      "contributors": [
+        "adr-reviewer-1",
+        "adr-architect"
+      ],
+      "review_iterations": 1,
+      "review_score": 88,
+      "review_score_estimated_final": "93-95",
+      "findings": {
+        "high": 2,
+        "medium": 4,
+        "low": 5
+      },
+      "revisions_requested": 4,
+      "revisions_applied": 4,
+      "spawn_requests": 1
+    }
+  },
+  "adr_002": {
+    "title": "Compact Multi-Account UI Architecture — Accordion State, Row Density, and File Decomposition",
+    "decisions": [
+      {
+        "id": "D1",
+        "title": "Exclusive Accordion with Auto-Expand",
+        "status": "accepted"
+      },
+      {
+        "id": "D2",
+        "title": "48pt Row Height",
+        "status": "accepted"
+      },
+      {
+        "id": "D3",
+        "title": "Compressed Footer with Globe Button",
+        "status": "accepted"
+      },
+      {
+        "id": "D4",
+        "title": "Bottleneck with Sonnet Model",
+        "status": "accepted"
+      },
+      {
+        "id": "D5",
+        "title": "6-File Decomposition",
+        "status": "accepted"
+      },
+      {
+        "id": "D6",
+        "title": "Color-for-Percentage Deduplication",
+        "status": "accepted"
+      }
+    ],
+    "extends": "ADR-001 D5",
+    "complexity": "medium",
+    "implementation_steps": 8,
+    "deferred": [
+      "Gear icon full implementation",
+      "PreferenceKey"
+    ]
+  },
+  "risks": {
+    "total": 8,
+    "by_severity": {
+      "high": 0,
+      "medium": 5,
+      "low": 3
+    },
+    "blocking": 0
+  },
+  "red_flags": {
+    "total": 5,
+    "rf1": "Popover height doesn't track interactive accordion state",
+    "rf2": "Not specified",
+    "rf3": "Deployment target concern with .menuStyle(.borderlessButton)",
+    "rf4": "Sonnet exclusion from bottleneck may be intentional but undocumented",
+    "rf5": "No regression safety net (zero-dependency constraint)"
+  },
+  "divergences": {
+    "file_decomposition": {
+      "architect_preference": "6-file (per conceptualize)",
+      "analyst_proposal": "4-file (B3) as pragmatic alternative",
+      "adr_decision": "6-file with clear rationale"
+    }
+  },
+  "process_issues_detected": "None",
+  "context_limit_hits": 0,
+  "agent_failures": 0,
+  "communication_breakdowns": 0,
+  "scope_drift": false,
+  "completion_status": "ready_for_implementation"
+}

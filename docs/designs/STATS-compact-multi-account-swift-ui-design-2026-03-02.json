@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "stage": "design",
+  "topic": "compact-multi-account-swift-ui",
+  "date": "2026-03-02",
+  "session": {
+    "startTime": "2026-03-02T12:36:07.644Z",
+    "endTime": "2026-03-02T12:36:07.644Z",
+    "duration": "TBD"
+  },
+  "participants": {
+    "team_lead": "team-lead",
+    "design_architect": "design-architect",
+    "ux_designer": "ux-designer",
+    "ui_designer": "ui-designer",
+    "platform_specialist": "platform-specialist",
+    "design_writer": "design-writer",
+    "design_reviewer": "design-reviewer",
+    "clerk": "clerk"
+  },
+  "review_summary": {
+    "final_score": 93,
+    "pass_threshold": 80,
+    "recommendation": "Implement",
+    "iterations_completed": 2,
+    "iterations_max": 2,
+    "total_findings": 11,
+    "findings_resolved": 11,
+    "findings_blocking": 0,
+    "findings_residual_informational": 2,
+    "iteration_scores": [72, 93]
+  },
+  "phase_1_scope": {
+    "platform": "macOS 13.0+ menu bar app",
+    "ui_framework": "NSPopover + SwiftUI",
+    "max_dimensions": "280x480pt",
+    "personas_count": 3,
+    "user_journeys_count": 5,
+    "design_constraints_count": 9,
+    "existing_components_cataloged": 9,
+    "new_components": 3,
+    "new_files_from_decomposition": 5,
+    "in_scope_decisions": ["D1", "D2", "D3", "D4", "D5", "D6"],
+    "deferred_scope": ["settings_panel", "persistence", "auto_pruning", "testing", "wcag_green_fix"]
+  },
+  "expert_analyses": {
+    "ux_designer": {
+      "task_id": 2,
+      "status": "completed",
+      "nielsen_average": 6.8,
+      "findings_count": 6,
+      "recommendations_count": 3,
+      "key_findings": [
+        "R1 (highest): Collapsed error state ambiguity",
+        "R2: Sonnet behavioral change confusion",
+        "All 6 ADR-002 decisions assessed as UX-sound trade-offs"
+      ]
+    },
+    "ui_designer": {
+      "task_id": 3,
+      "status": "completed",
+      "findings_count": 5,
+      "findings_severity": {
+        "high": 1,
+        "medium": 2,
+        "low": 2
+      },
+      "key_findings": [
+        "R1 (HIGH): Double-divider bug at footer boundary",
+        "R2 (MEDIUM): computePopoverHeight() sync issue",
+        "R3/R5 (MEDIUM): Missing withAnimation on expandedEmail changes"
+      ]
+    },
+    "platform_specialist": {
+      "task_id": 4,
+      "status": "completed",
+      "findings_count": 5,
+      "critical_fixes_needed": 1,
+      "key_findings": [
+        "Deployment target: macOS 13.0, Swift 5.0",
+        "CRITICAL: Gear icon Menu button requires .accessibilityLabel('Settings')",
+        "AppDelegate computePopoverHeight() formula must be updated atomically"
+      ]
+    }
+  },
+  "review_cycle": {
+    "iteration_1": {
+      "score": 72,
+      "decision": "revise",
+      "findings_total": 11,
+      "findings_by_severity": {
+        "critical": 0,
+        "high": 3,
+        "medium": 5,
+        "low": 3
+      },
+      "critical_findings": [
+        "F1: Missing statusEmoji update in D4 spec",
+        "F2: Missing computePopoverHeight() code in Step 6",
+        "F3: AccountDisclosureGroup props signature incorrect"
+      ]
+    },
+    "iteration_2": {
+      "score": 93,
+      "decision": "accept",
+      "findings_total": 0,
+      "findings_by_severity": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "all_previous_findings_resolved": true,
+      "residual_informational": 2
+    }
+  },
+  "design_decisions_synthesized": 6,
+  "conflicts_resolved": 4,
+  "spec_location": "docs/designs/DESIGN-compact-multi-account-swift-ui-2026-03-02.md",
+  "spec_sections": 12,
+  "key_synthesis_points": [
+    "withAnimation(.easeInOut(duration: 0.25)) required (UX + UI consensus)",
+    "Reduce Motion conditional check required (Platform)",
+    "Double-divider at footer boundary addressed (UI HIGH risk)",
+    "Error SF Symbol in collapsed header included (UX recommendation)",
+    "NSPopover contentSize animation concern documented (Platform)"
+  ],
+  "metrics": {
+    "scope_analysis_phase": "completed",
+    "expert_review_phase": "completed",
+    "write_review_cycle_phase": "completed",
+    "revision_cycles": 2,
+    "score_improvement": 21,
+    "final_acceptance": true
+  }
+}

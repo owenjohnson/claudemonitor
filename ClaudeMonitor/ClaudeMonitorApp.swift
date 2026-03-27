@@ -2,7 +2,7 @@ import SwiftUI
 import Combine
 
 @main
-struct ClaudeUsageApp: App {
+struct ClaudeMonitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -16,6 +16,7 @@ struct ClaudeUsageApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
+    var hostingController: NSHostingController<UsageView>?
     var usageManager = UsageManager()
     var timer: Timer?
     var cancellables = Set<AnyCancellable>()
@@ -61,7 +62,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func handleWake() {
-        // Delay refresh after wake to allow keychain to unlock
+        // Brief delay after wake for network reconnection
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
             await usageManager.refresh()
@@ -69,21 +70,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func startFetching() {
+        // Ensure ~/.claudemonitor/ exists
+        usageManager.ensureConfigDir()
+
         // Initial fetch and update check
         Task {
-            // If system recently booted (within 60 seconds), wait before accessing keychain
-            let uptime = ProcessInfo.processInfo.systemUptime
-            if uptime < 60 {
-                let delaySeconds = max(30 - uptime, 5)
-                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-            }
-
             await usageManager.refresh()
             await usageManager.checkForUpdates()
         }
 
-        // Refresh every 60 seconds (B3: reduced from 120s to enable faster account-switch detection)
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        // Refresh every 2 minutes
+        timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.usageManager.refresh()
             }
@@ -102,10 +99,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func setupPopover() {
+        let hc = NSHostingController(rootView: UsageView(manager: usageManager))
+        hostingController = hc
         popover = NSPopover()
-        popover?.contentSize = NSSize(width: 280, height: computePopoverHeight())
+        popover?.contentSize = measuredPopoverSize()
         popover?.behavior = .transient
-        popover?.contentViewController = NSHostingController(rootView: UsageView(manager: usageManager))
+        popover?.contentViewController = hc
     }
 
     func updateStatusItem() {
@@ -124,10 +123,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if let pct = usageManager.worstCaseUtilization {
-            // Worst-case across live accounts (OQ-3: stale excluded)
+        if let usage = liveAccount.usage {
+            let pct = usage.bottleneck.percentage
             let color: NSColor
-            let symbolName = "circle.fill"
             if pct >= 90 {
                 color = .systemRed
             } else if pct >= 70 {
@@ -135,7 +133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 color = .systemGreen
             }
-            button.image = statusImage(symbolName: symbolName, color: color)
+            button.image = statusImage(symbolName: "circle.fill", color: color)
             button.title = " \(pct)%"
             button.imagePosition = .imageLeading
         } else if liveAccount.error != nil {
@@ -150,24 +148,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func updatePopoverSize() {
-        popover?.contentSize = NSSize(width: 280, height: computePopoverHeight())
+        popover?.contentSize = measuredPopoverSize()
     }
 
-    private func computePopoverHeight() -> CGFloat {
-        let accounts = usageManager.accounts
-        guard accounts.count > 1 else { return 320 }
-
-        let headerFooter: CGFloat = 144 // ~44pt header + ~100pt footer
-        let expandedRowHeight: CGFloat = 236 // 56pt row header + ~180pt detail
-        let collapsedRowHeight: CGFloat = 56
-
-        // Default: live and actively-refreshing accounts expanded, stale accounts collapsed
-        let expandedCount = accounts.filter { $0.isCurrentAccount || $0.isActivelyRefreshing }.count
-        let collapsedCount = accounts.count - expandedCount
-        let contentHeight = CGFloat(expandedCount) * expandedRowHeight + CGFloat(collapsedCount) * collapsedRowHeight
-
-        let total = headerFooter + contentHeight
-        return min(max(total, 200), 480)
+    /// Ask the hosting controller for the real content height at fixed width.
+    private func measuredPopoverSize() -> NSSize {
+        let width: CGFloat = 280
+        let maxHeight: CGFloat = 600
+        guard let hc = hostingController else { return NSSize(width: width, height: 240) }
+        let ideal = hc.sizeThatFits(in: NSSize(width: width, height: maxHeight))
+        let height = min(max(ideal.height, 120), maxHeight)
+        return NSSize(width: width, height: height)
     }
 
     private func statusImage(symbolName: String, color: NSColor) -> NSImage? {

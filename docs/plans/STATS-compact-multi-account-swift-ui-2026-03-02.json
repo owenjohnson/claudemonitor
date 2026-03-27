@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "stage": "plan",
+  "topic": "compact-multi-account-swift-ui",
+  "date": "2026-03-02",
+  "session": {
+    "teamSize": 6,
+    "modelBreakdown": {
+      "opus": 2,
+      "sonnet": 2,
+      "haiku": 2
+    },
+    "agents": [
+      "plan-architect",
+      "risk-analyst",
+      "plan-writer",
+      "plan-reviewer",
+      "monitor",
+      "clerk"
+    ]
+  },
+  "inputArtifacts": [
+    "ADR-002: Compact Multi-Account Swift UI",
+    "Prior plan (2026-02-23) — Option A: conceptual reference only",
+    "Codebase state: v1.9 (ADR-001 shipped)"
+  ],
+  "decomposition": {
+    "phases": 4,
+    "totalTasks": 17,
+    "estimatedEffort": {
+      "optimistic": "2h15m",
+      "realistic": "4h05m",
+      "pessimistic": "6h45m"
+    },
+    "criticalPathTasks": 12,
+    "phases": [
+      {
+        "number": 1,
+        "name": "Foundation",
+        "tasks": 4,
+        "effort": "3-4h",
+        "scope": "colorForPercentage dedup, bottleneck computed property"
+      },
+      {
+        "number": 2,
+        "name": "Behavior",
+        "tasks": 4,
+        "effort": "6-8h",
+        "scope": "Exclusive accordion (D1), 48pt compact rows (D2)"
+      },
+      {
+        "number": 3,
+        "name": "Layout",
+        "tasks": 3,
+        "effort": "3-4h",
+        "scope": "Compressed footer (D3), popover height update"
+      },
+      {
+        "number": 4,
+        "name": "Extraction",
+        "tasks": 6,
+        "effort": "6-8h",
+        "scope": "6-file decomposition (D5), pbxproj update"
+      }
+    ]
+  },
+  "riskAnalysis": {
+    "overallRisk": "MEDIUM-LOW",
+    "prerequisites": 12,
+    "prerequisitesVerified": 12,
+    "blockers": 1,
+    "blockerDetails": {
+      "B2": "Design spec gap: compressedFooterView missing SMAppService register/unregister logic"
+    },
+    "risksIdentified": 11,
+    "riskCounts": {
+      "high": 1,
+      "medium": 6,
+      "low": 2
+    },
+    "highRisks": [
+      "R6/RF1: SMAppService missing from compressed footer design spec"
+    ],
+    "redFlags": 7,
+    "redFlagSummary": "RF1 (HIGH): SMAppService gap; RF2-RF3 (MEDIUM): No automated tests for bottleneck, Toggle inside Menu behavior uncertainty",
+    "manualTestPoints": 33,
+    "automatedTestInfrastructure": false
+  },
+  "planWriterDecisions": [
+    "Target version: v2.0 (next after v1.9)",
+    "Task 4.3 placement: Consistent with ADR-002 D5 ordering",
+    "Q2: Deferred per ADR-002",
+    "RF6: Out of scope"
+  ],
+  "review": {
+    "iterations": 1,
+    "maxIterations": 2,
+    "autoAcceptThreshold": 80,
+    "finalScore": 87,
+    "recommendation": "Accept",
+    "findingCounts": {
+      "critical": 0,
+      "high": 1,
+      "medium": 3,
+      "low": 3
+    },
+    "findingsSummary": "0 CRITICAL, 1 HIGH (Task 3.2 line number precision), 3 MEDIUM (line numbers, wording), 3 LOW (minor notes)",
+    "iterationDetails": [
+      {
+        "iteration": 1,
+        "reviewer": "plan-reviewer",
+        "score": 87,
+        "status": "Accepted (above threshold)"
+      }
+    ]
+  },
+  "plan": {
+    "reviewIterations": 1,
+    "readinessScore": 87,
+    "planFile": "docs/plans/PLAN-compact-multi-account-ui-2026-03-02.md",
+    "status": "READY FOR IMPLEMENTATION"
+  },
+  "conflicts": "None — no conflicts between agents observed",
+  "keyDecisions": [
+    "ADR-002 implementation order preserved in Task 4.3 placement",
+    "Design spec gap (B2/RF1: SMAppService) identified but out of scope for this iteration",
+    "Effort estimate: 4h05m realistic (based on 33 manual test points, no automated test infrastructure)"
+  ],
+  "rollbackStrategy": "Commit-per-step with git revert capability for any individual step",
+  "metadata": {
+    "generatedBy": "clerk",
+    "generatedAt": "2026-03-02T15:15:00Z",
+    "processRecorded": true
+  }
+}

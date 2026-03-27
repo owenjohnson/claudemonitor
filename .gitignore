@@ -17,6 +17,11 @@ DerivedData/
 *.swp
 *~
 
+# Local tooling config
+.claude/
+.agent/
+.crucible/
+
 # MCP Context Engineering artifacts
 .agent-artifacts/
 .agent-memory/

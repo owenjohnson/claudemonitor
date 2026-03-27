@@ -10,7 +10,8 @@ An ADR records a significant architectural decision made along with its context 
 
 | Number | Title | Status | Date |
 |--------|-------|--------|------|
-| - | - | - | - |
+| [ADR-001](./ADR-001-multi-account-support.md) | Add Multi-Account Support with Keychain Polling and Account Tracking | Proposed | 2026-02-23 |
+| [ADR-002](./ADR-002-compact-multi-account-ui.md) | Compact Multi-Account UI Architecture — Accordion State, Row Density, and File Decomposition | Proposed | 2026-03-01 |
 
 ## Creating a New ADR
 
