@@ -87,8 +87,11 @@ The storage story went through three generations — don't repeat the loop:
    ~1-year lifetime, requires Pro/Max/Team/Enterprise subscription).
 
 A fresh agent will gravitate to Keychain as the "correct macOS pattern."
-The decision to use a file was deliberate. Keep it (or document a reversal as
-a new ADR).
+The decision to use a file was deliberate. Scope of the lesson: the failures
+were reading *foreign* keychain items tied to *foreign* credential lifecycles
+— not app-owned Keychain usage. The new repo supersedes the plaintext token
+file with an encrypted local vault whose data key is an app-owned Keychain
+item (ADR-004); that design is consistent with this history.
 
 ### 3.3 Percentage truncation bug (ADR-003)
 
@@ -150,7 +153,15 @@ Functional parity checklist:
 - [ ] No telemetry; credentials never leave the machine except to the provider's own API
 - [ ] Masked-token file logging for debugging
 
-New scope (see ADR-004): provider-adapter architecture for Anthropic + OpenAI
-Codex + Google Gemini. **Do not** generalize from Anthropic's header shape —
-each provider has a different auth source, probe method, usage model, and
-reset semantics. ADR-004 records the research and the abstraction decision.
+New scope (see ADR-004): a **plugin framework** for usage monitoring across
+backends (initially Anthropic, OpenAI Codex, Google Antigravity), with secrets
+held in a CLI-managed local vault and passed to plugins — config files carry
+service registrations and secret *references* only, never secret material.
+**Do not** generalize from Anthropic's header shape — each provider has a
+different auth source, fetch method, usage model, and reset semantics.
+ADR-004 specifies the framework; per-provider mechanics land in separate ADRs
+(planned ADR-005 Anthropic, ADR-006 Codex, ADR-007 Antigravity).
+
+Note for the rewrite: this spec's §2–3 Anthropic details become the substance
+of ADR-005; the file-based token store described here is replaced by the
+vault (§3.2 note).
