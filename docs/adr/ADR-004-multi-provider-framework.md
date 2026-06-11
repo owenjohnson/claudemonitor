@@ -1,7 +1,7 @@
 # ADR-004: Plugin framework for usage monitoring with vault-backed secrets
 
 **Date:** 2026-06-11
-**Status:** Proposed (for the successor repository)
+**Status:** Accepted (2026-06-11; governs the successor repository)
 **Deciders:** Owen Johnson, Claude (provider research 2026-06-11)
 
 ---
@@ -90,6 +90,12 @@ struct FetchResult {
     let updatedSecrets: [String: String]?  // host persists these to the vault (rotation write-back)
 }
 ```
+
+`secretSpecs` may be **empty**: a plugin may instead declare a *liveness
+dependency* (it reads ephemeral state from a locally running process rather
+than stored credentials — see ADR-007 Antigravity). The host renders
+"provider not running" as an informational state distinct from errors, with
+the previous snapshot shown as stale.
 
 Normalization rules plugins own:
 - **Direction:** everything converts to *used* fraction (invert remaining-style
