@@ -91,6 +91,12 @@ struct FetchResult {
 }
 ```
 
+`secretSpecs` may be **empty**: a plugin may instead declare a *liveness
+dependency* (it reads ephemeral state from a locally running process rather
+than stored credentials — see ADR-007 Antigravity). The host renders
+"provider not running" as an informational state distinct from errors, with
+the previous snapshot shown as stale.
+
 Normalization rules plugins own:
 - **Direction:** everything converts to *used* fraction (invert remaining-style
   APIs inside the plugin, nowhere else).
