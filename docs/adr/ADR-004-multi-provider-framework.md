@@ -1,7 +1,7 @@
 # ADR-004: Plugin framework for usage monitoring with vault-backed secrets
 
 **Date:** 2026-06-11
-**Status:** Proposed (for the successor repository)
+**Status:** Accepted (2026-06-11; governs the successor repository)
 **Deciders:** Owen Johnson, Claude (provider research 2026-06-11)
 
 ---
