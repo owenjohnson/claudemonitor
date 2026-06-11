@@ -1,4 +1,4 @@
-# ADR-004: Multi-provider usage-monitoring framework (Anthropic, OpenAI Codex, Google Gemini)
+# ADR-004: Plugin framework for usage monitoring with vault-backed secrets
 
 **Date:** 2026-06-11
 **Status:** Proposed (for the successor repository)
@@ -9,177 +9,238 @@
 ## Context
 
 This app is being rebuilt from scratch in a new repository (see
-`docs/REBUILD-SPEC.md`), with new scope: monitoring usage for **OpenAI Codex**
-and **Google Gemini** accounts alongside Claude. The current architecture is
-Anthropic-specific — `UsageManager` hardcodes the probe endpoint, header names,
-auth header shape, and the session/weekly/sonnet window trio all the way into
-the UI models.
+`docs/REBUILD-SPEC.md`) with broader scope: monitoring usage for multiple
+backends — initially **Anthropic (Claude)**, **OpenAI (Codex)**, and **Google
+(Antigravity)** — with more expected later. Two architectural problems must be
+solved once, up front:
 
-Research into the three providers (2026-06-11, sources at bottom) shows the
-usage surfaces are **fundamentally different** — different auth sources,
-different fetch mechanisms, different data shapes, different failure modes.
-None of the three is a documented, stable API.
+**1. The current design is single-provider.** `UsageManager` hardcodes the
+Anthropic probe endpoint, header names, auth shape, and a fixed
+session/weekly/sonnet window trio all the way into the UI models.
 
-### Provider survey
+Provider research (2026-06-11; sources at bottom) confirmed the usage surfaces
+are heterogeneous on every axis — and all undocumented:
 
-| | Anthropic (Claude) | OpenAI (Codex) | Google (Gemini CLI) |
-|---|---|---|---|
-| Credential source | User-minted long-lived token via `claude setup-token`, stored in app's own `~/.claudemonitor/claudeoauth.json` | Codex CLI's `~/.codex/auth.json` (or OS keyring when `cli_auth_credentials_store=keyring/auto`) | Gemini CLI's `~/.gemini/oauth_creds.json` |
-| Token lifetime | ~1 year, no refresh | OAuth access token (short) + **single-use rotating** refresh token | Google OAuth ~1h access + refresh token |
-| Refresh mechanism | none needed | `POST auth.openai.com/oauth/token`; **danger:** reusing a rotated refresh token permanently kills the CLI session | standard `POST oauth2.googleapis.com/token` using the CLI's embedded public client ID/secret |
-| Usage fetch | **Probe inference call** (1-token Haiku message), read `anthropic-ratelimit-unified-*` response headers | **Dedicated endpoint** `GET chatgpt.com/backend-api/wham/usage` (Bearer + `chatgpt-account-id` header) | **Dedicated endpoint** `POST cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`; tier/project via `:loadCodeAssist` |
-| Data shape | used fraction 0–1 per window + epoch reset | `used_percent` 0–100 per window + `reset_at` epoch + window minutes; credits balance; `additional_rate_limits[]` | **`remainingFraction`** 0–1 (inverted!) per model bucket + ISO-8601 `resetTime` |
-| Windows | 5h session, 7d weekly, 7d Sonnet | primary ≈ 5h, secondary ≈ 7d (token-consumption metered), per-model extras | per-model daily request quota |
-| Cost of a poll | 1 Haiku token (paid inference) | free (read-only endpoint) | free (read-only endpoint) |
-| At-limit behavior | probe returns **429 that still carries the headers** (must parse — see REBUILD-SPEC §3.1) | endpoint still readable; `rate_limit_reached_type` distinguishes cap types | quota API omits `remainingAmount` at 100%-remaining (known stale-cache bug source) |
-| Stability | undocumented headers | undocumented endpoint; header families already changed once | `v1internal` private API; **service sunset announced 2026-06-18** for individual/Pro/Ultra tiers (migration: Antigravity) |
+| | Auth material | Usage fetch | Data shape | Notable hazard |
+|---|---|---|---|---|
+| Anthropic | user-minted ~1yr OAuth token (`claude setup-token`) | 1-token probe inference call; read `anthropic-ratelimit-unified-*` response headers | used-fraction 0–1 per window, epoch resets | at 100% the probe 429s but headers must still be parsed |
+| OpenAI Codex | Codex CLI OAuth tokens; **single-use rotating refresh token** | `GET chatgpt.com/backend-api/wham/usage` (or `codex app-server` JSON-RPC) | `used_percent` 0–100, window minutes, credits, dynamic extra windows | careless refresh permanently logs the user's CLI out |
+| Google Antigravity | Google OAuth (successor to Gemini CLI auth) | Antigravity quota plumbing — to be specified in its provider ADR | per-model buckets; Gemini's API reported **remaining**, not used | Gemini CLI individual/Pro/Ultra tiers stop serving 2026-06-18; Antigravity replaces them. Prior art (ClaudeBar) already monitors Antigravity |
 
-Forces:
+Provider breakage is a *when*, not an *if* — each integration must be isolated
+so one provider's drift can't take down the app. Per-provider mechanics
+(endpoints, refresh rules, parsing) are **out of scope here** and will be
+specified in separate provider ADRs (planned: ADR-005 Anthropic, ADR-006
+Codex, ADR-007 Antigravity).
 
-- All three surfaces are undocumented and provider-breakage is a *when*, not an
-  *if*. The architecture must localize breakage to one adapter.
-- The UI must not assume Anthropic's fixed three-window shape: Codex has
-  credits and dynamic extra windows; Gemini has per-model buckets.
-- Codex token refresh is hazardous (single-use rotation); a careless
-  implementation breaks the user's Codex CLI login.
-- Gemini's primary OAuth path may die a week after this ADR; Antigravity
-  support must be addable without rework.
-- Prior art exists and validates the pattern: CodexBar (Swift menubar,
-  Codex+Gemini), ClaudeBar (Claude+Codex+Gemini+Antigravity), and
-  coding_agent_usage_tracker all ship exactly these mechanisms.
+**2. Secrets currently live in plaintext config.** Today
+`~/.claudemonitor/claudeoauth.json` *is* both the account registry and the
+secret store — tokens sit in a plaintext file that doubles as configuration.
+Adding more providers multiplies the number of long-lived credentials at
+stake. Requirement for the rebuild: **no secret material in config files.**
+
+The repo's history also constrains the solution: ADR-001/ADR-003 record that
+*reading another app's Keychain items* failed twice (rotating tokens, ACL
+dialogs, subprocess overhead). That lesson is about foreign keychain items and
+foreign credential lifecycles — it does not preclude an app-owned secret
+store.
 
 ## Decision
 
-Build the new app around a **provider-adapter protocol** with a normalized
-domain model. Provider-specific knowledge lives only inside adapters.
+The new app is a thin host around two seams: a **usage-plugin protocol** and a
+**local secrets vault** with a companion CLI. Configuration registers services
+and *references* secrets; the vault holds them; plugins receive them.
 
-### Normalized domain model
+### 1. Plugin protocol and normalized domain model
+
+Plugins are compiled-in Swift implementations of a single protocol, registered
+in a static registry (no dynamic loading — see Alternatives).
 
 ```swift
 struct LimitWindow {
-    let id: String            // "session-5h", "weekly", "model:gemini-2.5-pro"
+    let id: String            // "session-5h", "weekly", "model:gpt-5.3-codex"
     let label: String         // display name
-    let usedFraction: Double  // ALWAYS used (not remaining), 0.0–1.0
+    let usedFraction: Double  // ALWAYS "used" (plugins invert remaining-style APIs), 0.0–1.0
     let resetsAt: Date?
     let windowDuration: TimeInterval?
 }
 
 struct UsageSnapshot {
-    let windows: [LimitWindow]       // variable count — UI renders N rows
-    let planType: String?            // "max", "pro", "free-tier", …
-    let credits: CreditInfo?         // Codex only today; optional everywhere
+    let windows: [LimitWindow]   // variable count — UI renders N rows, never assumes 3
+    let planType: String?
+    let credits: CreditInfo?     // optional everywhere
     let fetchedAt: Date
+    let details: [String: String] // provider extras, opaque to the host
 }
 
-protocol ProviderAdapter {
-    var providerID: String { get }
-    func discoverAccounts() async throws -> [ProviderAccount]   // from cred files
-    func fetchUsage(for account: ProviderAccount) async throws -> UsageSnapshot
+struct SecretSpec {
+    let key: String              // e.g. "oauth_token", "refresh_token"
+    let description: String      // shown by the CLI when prompting
+    let mutable: Bool            // plugin may return an updated value (token rotation)
+}
+
+protocol UsagePlugin {
+    static var providerID: String { get }     // "anthropic", "codex", "antigravity"
+    static var secretSpecs: [SecretSpec] { get }
+    func fetchUsage(account: AccountConfig, secrets: SecretBundle) async throws -> FetchResult
+}
+
+struct FetchResult {
+    let snapshot: UsageSnapshot
+    let updatedSecrets: [String: String]?  // host persists these to the vault (rotation write-back)
 }
 ```
 
-Normalization rules the adapters own:
+Normalization rules plugins own:
+- **Direction:** everything converts to *used* fraction (invert remaining-style
+  APIs inside the plugin, nowhere else).
+- **Scale:** 0–1 fractions internally; conversion to display percent happens
+  once in the UI with proper rounding (REBUILD-SPEC §3.3).
+- **Times:** epoch seconds, ISO-8601, or relative seconds all normalize to `Date`.
+- **Leniency:** parse numbers from string/int/float (providers disagree with
+  their own schemas).
 
-- **Direction:** everything converts to *used* fraction (Gemini reports
-  `remainingFraction` — invert in the adapter, nowhere else).
-- **Scale:** fractions 0–1 internally; rounding to display percent happens once
-  in the UI layer (with proper rounding — REBUILD-SPEC §3.3).
-- **Reset times:** epoch seconds (Anthropic, Codex) and ISO-8601 (Gemini) both
-  normalize to `Date`.
-- **Type leniency:** parse numbers from strings/int/float (Codex `used_percent`
-  is `f64` in headers but `i32` in the OpenAPI body model).
+Host-owned cross-cutting behavior (no plugin reimplements these):
+- **Stale-not-clobbered:** a plugin failure leaves the previous snapshot
+  rendered as stale alongside the error; reset times are never replaced by a
+  bare error (REBUILD-SPEC §3.1).
+- **Scheduling:** the host staggers polls per provider (some polls are real
+  inference requests) and may run different providers concurrently.
+- **Logging:** secrets are masked centrally; plugins log through the host.
 
-### Per-adapter implementation notes (binding)
+### 2. Secrets vault + CLI
 
-**Anthropic** — port as-is from this repo, including the 429-with-headers rule,
-staggered sequential probes, and file-based token storage (REBUILD-SPEC §3).
+A local encrypted vault, owned by the app (name TBD), managed through a
+companion CLI:
 
-**Codex** — read `~/.codex/auth.json` (handle keyring-only installs by
-degrading gracefully); call `wham/usage`; map `primary_window`/
-`secondary_window`/`additional_rate_limits[]` to windows and surface credits.
-**Token-refresh policy (safety-critical):** mirror Codex CLI's own behavior —
-refresh only when `last_refresh` is older than 8 days OR the JWT `exp` is
-within ~5 minutes, and **write the rotated tokens back to `auth.json`
-atomically**. Never refresh speculatively: refresh tokens are single-use, and
-burning one logs the user out of their own CLI. Fallback path if the file
-format shifts: spawn `codex app-server` and use the JSON-RPC
-`account/rateLimits/read` method (typed, versioned — degrades with deprecation
-paths instead of silently).
+```
+<app> vault set <provider>/<account>/<key>     # prompts; never takes secret as argv
+<app> vault list                               # names/metadata only, never values
+<app> vault rm <provider>/<account>/<key>
+<app> vault import <provider>                  # provider ADRs may define importers
+                                               # (e.g. pull tokens from ~/.codex/auth.json)
+<app> service add <provider> --name <label>    # writes config, prompts for declared secrets
+```
 
-**Gemini** — read `~/.gemini/oauth_creds.json`; refresh via the CLI's embedded
-public OAuth client (standard installed-app pattern; CodexBar does the same);
-`loadCodeAssist` → tier + `cloudaicompanionProject`; `retrieveUserQuota` →
-per-model buckets. Treat a missing `remainingAmount` as "100% remaining", not
-as stale data. **Plan for the 2026-06-18 sunset:** structure the Gemini adapter
-so an Antigravity adapter can replace/join it; do not invest in the API-key
-path (no quota endpoint exists — static limits + 429 `QuotaFailure` parsing
-only) unless users ask.
+Design points:
 
-### Cross-cutting rules (lifted from this repo's lessons)
+- **Storage:** one encrypted vault file (e.g. AES-GCM via CryptoKit) under the
+  app's config directory. The data-encryption key is stored as an
+  **app-owned** macOS Keychain item shared between app and CLI via the same
+  keychain access group. This respects the ADR-003 lesson: the failures were
+  reading *foreign* keychain items with foreign lifecycles; an item the app
+  creates and owns has no ACL-dialog or rotation problem.
+- **Addressing:** secrets are addressed `provider/account/key`, matching the
+  plugin's declared `secretSpecs`.
+- **Write-back:** when a plugin returns `updatedSecrets` (rotating refresh
+  tokens), the host persists them to the vault atomically. Rotation handling
+  is a framework feature, not a per-plugin hack.
+- **No secret ever appears in:** config files, process arguments, logs, or
+  error messages. The CLI prompts on stdin (or reads from a pipe) for values.
+- **Migration:** a one-time importer moves tokens from the legacy
+  `claudeoauth.json` shape into the vault.
 
-1. **Never clobber last-known reset times with an error** — every adapter
-   failure leaves the previous `UsageSnapshot` rendered as stale alongside the
-   error (REBUILD-SPEC §3.1).
-2. **Stagger same-provider polls** (Anthropic especially — its poll is a real
-   inference request); cross-provider polls may run concurrently.
-3. **Secrets hygiene:** mask tokens in logs (last 6 chars), never write
-   credentials anywhere except their canonical store, mode 600 on owned files.
-4. **Fixture-tested parsers:** each adapter ships recorded real responses
-   (200, at-limit, error) as test fixtures so provider drift is caught by a
-   failing test, not a user report.
+### 3. Config = registry of services, no secrets
+
+```jsonc
+// ~/.{app}/config.json — safe to commit, sync, or screenshot
+{
+  "services": [
+    {"provider": "anthropic",   "name": "Personal",  "pollSeconds": 120},
+    {"provider": "anthropic",   "name": "Work"},
+    {"provider": "codex",       "name": "Work"},
+    {"provider": "antigravity", "name": "Personal"}
+  ]
+}
+```
+
+At startup and on each refresh the host: reads config → for each registered
+service, resolves that plugin's `secretSpecs` from the vault
+(`provider/name/key`) → invokes the plugin with the resolved `SecretBundle`.
+A service whose secrets are missing renders as "needs setup — run
+`<app> service add …`" rather than erroring opaquely.
+
+Config keeps the current repo's ergonomics where they don't conflict:
+re-read on every refresh cycle (no restart to add accounts), first service =
+primary for the status bar, duplicate names rejected.
+
+### 4. Provider ADRs
+
+Each backend gets its own ADR specifying: credential acquisition and import
+path, fetch mechanism, window mapping, refresh/rotation rules, failure modes,
+and test fixtures. Planned:
+
+- **ADR-005 Anthropic plugin** — probe-call mechanism, 429-with-headers rule,
+  `claude setup-token` acquisition (port from this repo; REBUILD-SPEC §2–3).
+- **ADR-006 Codex plugin** — `wham/usage` endpoint, `app-server` RPC fallback,
+  the 8-day/JWT-expiry refresh policy and single-use-refresh-token safety,
+  `vault import codex` from `~/.codex/auth.json`.
+- **ADR-007 Antigravity plugin** — Antigravity quota/auth plumbing (research
+  needed; ClaudeBar is prior art). The legacy Gemini CLI path
+  (`retrieveUserQuota`) is documented in this PR's research notes but is not a
+  build target — its consumer tiers stop serving 2026-06-18.
 
 ## Consequences
 
 ### Positive
-- Provider breakage is contained to one adapter; the UI and scheduler never change.
-- Variable-window model accommodates Codex credits/extra lanes and Gemini
-  per-model buckets without UI rework, and leaves room for Antigravity.
-- Reusing the CLIs' own credential stores means zero extra login UX for Codex
-  and Gemini (Claude keeps its token-file flow since `claude setup-token`
-  output isn't persisted by the CLI).
+- One provider's API drift breaks one plugin; host, UI, scheduler, and vault
+  are untouched. New backends are a plugin + a provider ADR.
+- Secrets get real hygiene: encrypted at rest, never in config/argv/logs,
+  single audited write-back path for rotating tokens.
+- Config becomes shareable/syncable since it carries no secret material.
+- The variable-window model accommodates credits, per-model buckets, and
+  future window shapes without UI rework.
 
 ### Negative
-- Three undocumented surfaces ≈ three independent breakage clocks; maintenance
-  burden grows with each provider.
-- Reading other apps' credential files is inherently fragile (paths, formats,
-  keyring migration) and may read as invasive to some users — must stay
-  read-only except for the documented Codex token write-back.
-- Codex refresh write-back is a real correctness risk (file race with a running
-  CLI); requires atomic write + file locking care.
+- More moving parts than today: vault + CLI + plugin registry vs. one JSON
+  file. First-run setup requires the CLI (mitigated by `service add` doing
+  config + secret prompts in one step).
+- App-owned Keychain item + access-group sharing requires correct code
+  signing/entitlements across app and CLI binaries.
+- Vault write-back must be atomic and race-safe (CLI and app can both write).
 
 ### Neutral
-- The normalized model slightly flattens provider-specific nuance (e.g. Codex
-  `spend_control`); adapters can expose extras via an opaque `details` field
-  when the UI grows to need them.
+- Plugins are compiled in; third parties extend by PR, not by dropping in a
+  bundle. The protocol seam keeps a future out-of-process plugin mode open.
+- Per-provider research already done (Codex, legacy Gemini) moves to the
+  provider ADRs rather than living here.
 
 ## Alternatives Considered
 
-### Alternative 1: Extend the current Anthropic-shaped model
-Keep `UsageData` (session/weekly/sonnet) and map other providers onto it.
-Rejected: Codex credits and Gemini per-model buckets don't fit three fixed
-slots; the mapping would lie to users and break first.
+### Alternative 1: Secrets stay in config files (status quo)
+One plaintext JSON holding tokens. Rejected: multiplying providers multiplies
+plaintext long-lived credentials; config can't be synced or shared; violates
+the rebuild requirement outright.
 
-### Alternative 2: Shell out to each CLI and parse human output
-Run `claude /status`-equivalents and scrape text. Rejected as primary: output
-text changes constantly, requires the CLIs installed and on PATH, and spawns
-processes per poll. Exception: `codex app-server` JSON-RPC is a *structured*
-CLI surface and is retained as the Codex fallback path.
+### Alternative 2: Per-secret macOS Keychain items, no vault file
+Store each secret as its own Keychain item. Workable, but: CLI access to many
+items multiplies ACL/entitlement surface, portability and backup are awkward,
+and listing/metadata UX is poor. A single encrypted file with one Keychain-held
+key keeps Keychain's protection with file-level simplicity. The ADR-003
+history also argues for minimizing Keychain surface area.
 
-### Alternative 3: Web-dashboard scraping (hidden WebView + browser cookies)
-CodexBar offers this as an opt-in extra. Rejected for core: heaviest, most
-fragile, and cookie import raises the privacy bar far above reading local CLI
-credential files.
+### Alternative 3: Plugins read provider CLIs' credential files directly
+E.g. the Codex plugin reads `~/.codex/auth.json` at fetch time. Rejected as
+the default: secrets would bypass the vault (no masking/rotation/audit path),
+plugins would gain filesystem credential access, and foreign-file format drift
+becomes a runtime failure. Instead, provider ADRs define **importers**
+(`vault import codex`) so foreign credentials enter the vault explicitly, and
+rotation write-back keeps them current.
+
+### Alternative 4: Dynamically loaded plugin bundles
+Out-of-process or `dlopen`-style plugins. Rejected for now: code-signing and
+sandbox complexity, secret-passing across process boundaries, and no current
+third-party demand. The protocol is the seam; dynamic loading can come later
+without redesign.
 
 ## References
 
-- `docs/REBUILD-SPEC.md` (this repo) — Anthropic mechanism + lessons
-- Codex auth/storage: https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/storage.rs and `manager.rs`
-- Codex rate-limit headers/SSE: https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/rate_limits.rs
-- Codex usage payload models: https://github.com/openai/codex/blob/main/codex-rs/codex-backend-openapi-models/src/models/rate_limit_status_payload.rs
-- Codex app-server protocol: https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/account.rs
-- Codex limits semantics: https://developers.openai.com/codex/pricing
-- Gemini CLI oauth: https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/oauth2.ts
-- Gemini quota endpoint types: https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/types.ts (PR #13843)
-- Gemini quotas + sunset notice: https://developers.google.com/gemini-code-assist/resources/quotas
-- Gemini API-key rate limits: https://ai.google.dev/gemini-api/docs/rate-limits
-- Prior art: https://github.com/steipete/CodexBar (esp. `docs/codex.md`, `docs/gemini.md`), https://github.com/tddworks/ClaudeBar, https://github.com/Dicklesworthstone/coding_agent_usage_tracker
+- `docs/REBUILD-SPEC.md` (this repo) — Anthropic mechanism + portable lessons
+- ADR-001 / ADR-003 (this repo) — Keychain history motivating the vault design
+- Provider research (2026-06-11), to be carried into ADR-005/006/007:
+  - Codex auth/storage: https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/storage.rs and `manager.rs`
+  - Codex usage surfaces: https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/rate_limits.rs, https://github.com/openai/codex/blob/main/codex-rs/codex-backend-openapi-models/src/models/rate_limit_status_payload.rs, https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/account.rs
+  - Codex limit semantics: https://developers.openai.com/codex/pricing
+  - Gemini CLI sunset notice (motivates Antigravity): https://developers.google.com/gemini-code-assist/resources/quotas
+  - Legacy Gemini quota endpoint (historical reference): https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/types.ts
+- Prior art: https://github.com/steipete/CodexBar, https://github.com/tddworks/ClaudeBar (includes Antigravity), https://github.com/Dicklesworthstone/coding_agent_usage_tracker
