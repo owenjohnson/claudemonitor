@@ -55,14 +55,15 @@ This builds a Release configuration and installs `ClaudeMonitor.app` to `/Applic
 
 ## Setup
 
-Claude Monitor requires a **long-lived OAuth token** with `user:inference` scope. This is different from the short-lived session tokens that Claude Code rotates automatically.
+Claude Monitor requires a **long-lived OAuth token**. This is different from the short-lived session tokens that Claude Code rotates automatically.
 
 ### 1. Get your OAuth token
 
-1. Go to [console.anthropic.com](https://console.anthropic.com)
-2. Navigate to **Settings** → **OAuth Applications**
-3. Create a new OAuth token (or use an existing one) with the `user:inference` scope
-4. Copy the token — it will look like `sk-ant-oaut01-...`
+1. Run `claude setup-token` in a terminal (requires the [Claude Code CLI](https://claude.com/claude-code) and a Claude subscription — Pro, Max, Team, or Enterprise; API-only Console accounts won't work)
+2. A browser window opens — log in with the Claude account you want to monitor
+3. Copy the token printed in the terminal — it will look like `sk-ant-oat01-...` and is valid for about one year
+
+To monitor multiple accounts, run `claude setup-token` once per account, logging in as that account each time.
 
 ### 2. Add the token to the config file
 
@@ -77,14 +78,14 @@ Then edit `~/.claudemonitor/claudeoauth.json` with your real tokens. See [`claud
 
 **Single account (simple array):**
 ```json
-["sk-ant-oaut01-your-token-here"]
+["sk-ant-oat01-your-token-here"]
 ```
 
 **Multiple accounts (with labels):**
 ```json
 [
-  {"token": "sk-ant-oaut01-personal-token", "name": "Personal"},
-  {"token": "sk-ant-oaut01-work-token", "name": "Work"}
+  {"token": "sk-ant-oat01-personal-token", "name": "Personal"},
+  {"token": "sk-ant-oat01-work-token", "name": "Work"}
 ]
 ```
 
@@ -130,7 +131,7 @@ Check if the app is running in Activity Monitor. Try quitting and reopening.
 
 ### Usage shows wrong values
 
-Click the refresh button (↻) in the dropdown. If still wrong, your token may have expired — generate a new one from the Anthropic console.
+Click the refresh button (↻) in the dropdown. If still wrong, your token may have expired — generate a new one with `claude setup-token`.
 
 ## Contributing
 
